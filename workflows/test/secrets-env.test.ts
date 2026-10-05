@@ -21,7 +21,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { fs, os } from "./helpers/host.ts";
 // @ts-expect-error: plain ESM scripts, no type declarations
-import { allSecretEnvNames, CRE_TARGETS, parseSecretsNames, secretEnvFor, secretsPathOf, WORKFLOW_DIRS } from "../scripts/cre.mjs";
+import { allSecretEnvNames, CRE_TARGETS, configPathOf, parseSecretsNames, secretEnvFor, secretsPathOf, underwritingSimulateConfig, WORKFLOW_DIRS } from "../scripts/cre.mjs";
 // @ts-expect-error: plain ESM scripts, no type declarations
 import { missingSecretEnv, simulationEnv, withoutMissingKeys } from "../scripts/sim.mjs";
 // @ts-expect-error: plain ESM scripts, no type declarations
@@ -161,6 +161,28 @@ describe("an evidence run's own config", () => {
     expect(withoutMissingKeys(underwriting, secretsNames, zerion).leftOut).toEqual(["nansen", "etherscan"]);
     const all = simulationEnv({ NANSEN_API_KEY: "n", ZERION_API_KEY: "z", ETHERSCAN_API_KEY: "e" }, NO_FILE);
     expect(runConfig("underwriting", underwriting, { env: all, secretsNames })).toBeNull();
+  });
+
+  test("simulate:underwriting leaves out each provider whose key is empty (not configured), and changes nothing when every key is set", () => {
+    // A copy of the project's files, so the derived config lands in a scratch .local/.
+    const root = fs.mkdtempSync(join(os.tmpdir(), "polaris-simconfig-"));
+    fs.cpSync(join(ROOT, "underwriting"), join(root, "underwriting"), { recursive: true });
+    fs.cpSync(join(ROOT, "secrets.yaml"), join(root, "secrets.yaml"), { recursive: false });
+    expect(configPathOf(read("underwriting/workflow.yaml"), "staging-settings")).toBe("./config.staging.json");
+    const args = ["workflow", "simulate", "./underwriting", "--non-interactive", "--trigger-index", "0", "--broadcast", "-T", "staging-settings"];
+
+    const none = underwritingSimulateConfig(args, simulationEnv({ CRE_ETH_PRIVATE_KEY: KEY, ETHERSCAN_API_KEY: "es-key" }, NO_FILE), root);
+    expect(none.leftOut).toEqual(["nansen", "zerion", "zerionBasicAuth"]);
+    expect(none.args.slice(0, args.length)).toEqual(args);
+    expect(none.args.slice(args.length)).toEqual(["--config", "../.local/underwriting.staging-settings.simulate.json"]);
+    const written = JSON.parse(fs.readFileSync(join(root, ".local", "underwriting.staging-settings.simulate.json"), "utf8"));
+    expect(written.secrets).toEqual({ nansen: null, zerion: null, zerionBasicAuth: null, etherscan: "ETHERSCAN_API_KEY" });
+    expect(written.recipe).toEqual(underwriting.recipe);
+
+    const all = simulationEnv({ NANSEN_API_KEY: "n", ZERION_API_KEY: "z", ETHERSCAN_API_KEY: "e" }, NO_FILE);
+    expect(underwritingSimulateConfig(args, all, root)).toBeNull();
+    expect(underwritingSimulateConfig([...args, "--config", "./mine.json"], {}, root)).toBeNull();
+    expect(underwritingSimulateConfig(["workflow", "simulate", "./collections", "-T", "staging-settings"], {}, root)).toBeNull();
   });
 
   test("--callback: collections and underwriting post to it for this run only; the guardian has no callback", () => {
