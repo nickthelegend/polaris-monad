@@ -100,7 +100,10 @@ async function review(popup) {
     async () => {
       if ((await popup.getByText(/Your limit went up|still running/).count()) > 0) return { up: true, message: "" };
       const alert = popup.getByRole("alert").filter({ hasText: /\S/ });
-      if ((await alert.count()) > 0) return { up: false, message: (await alert.first().innerText()).replace(/\s+/g, " ").trim() };
+      if ((await alert.count()) > 0) {
+        await alert.first().scrollIntoViewIfNeeded().catch(() => {});
+        return { up: false, message: (await alert.first().innerText()).replace(/\s+/g, " ").trim() };
+      }
       return null;
     },
     240000,

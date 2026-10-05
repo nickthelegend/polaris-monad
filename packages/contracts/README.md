@@ -139,7 +139,11 @@ report from a traced delivery on the path where the receiver succeeds. Behind
 a simulation transmitter the workflows size a write from the same
 forwarder-level estimate (`estimateDelivery` in `workflows/src/shared/evm.ts`;
 the staging configs' floor is 150,000). Whether Monad testnet's own
-`eth_estimateGas` undershoots the same way is not established.
+`eth_estimateGas` undershoots the same way is not established. On
+`demo:local`'s fork, the local CRE runners answer that estimate with the gas
+of a traced delivery (`tracedDeliveryGas` in
+`workflows/e2e/helpers/local-evm.ts`), to which the workflow adds its 15%
+headroom.
 
 ## Contracts
 

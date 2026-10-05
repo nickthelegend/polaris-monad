@@ -129,41 +129,81 @@ pnpm demo:local
 ```
 
 `pnpm demo:local` ([`scripts/demo-local.mjs`](scripts/demo-local.mjs)) starts
-everything on this machine, with nothing live (no Privy login, no CRE login,
-no public chain):
+everything on this machine. By default it runs on a local
+[anvil](https://getfoundry.sh) fork of Monad testnet (`DEMO_CHAIN=fork`): it
+reads testnet's state over the public RPC and sends nothing there, so the
+dollar is Agora's real AUSD and the CRE forwarder is Chainlink's own, as they
+stand on testnet. No Privy login and no CRE login are needed.
+`DEMO_CHAIN=hardhat` runs the older stack instead: a Hardhat node (chain
+31337) with MockAUSD, the repo's own MockKeystoneForwarder and the dev signer
+in place of Face ID.
 
-| What | Where | How it runs |
+| What | Where | How it runs (fork mode) |
 |---|---|---|
-| A Hardhat node, chain 31337 | http://127.0.0.1:8545 | every contract deployed by `packages/contracts/scripts/deploy-monad.js` (MockAUSD, a funded credit pool, a local CRE forwarder) |
-| Polaris for Business | http://localhost:3100 | the dev relayer adapter (a local key held to the production relayer policy), a fresh SQLite store, Halcyon's merchant seeded with test API keys and a webhook, registered on `MerchantRegistry` through the dashboard's registration API; the dashboard is signed in for Halcyon with a random local session |
-| The CRE underwriting trigger | http://127.0.0.1:2000/trigger | `workflows` `trigger:local`: the real `polaris-underwrite` handler on the CRE SDK's test runtime, with fixture evidence |
-| The Polaris app | http://localhost:3000 | the hosted checkout; the dev signer stands in for Face ID (badge on every screen) |
+| An anvil fork of Monad testnet, chain 10143 | http://127.0.0.1:8545 | `anvil --fork-url https://testnet-rpc.monad.xyz --chain-id 10143 --prune-history 300` (`DEMO_FORK_URL`, `DEMO_FORK_BLOCK`). Every contract deployed by the fork deploy (`deploy:fork`) on Agora's AUSD, the CRE receivers behind Chainlink's MockKeystoneForwarder (`0xB9F79d863261869B234c481D1f9A7af84AeAd192`, the contract `cre workflow simulate --broadcast` writes through) with the node's second account as the simulation transmitter; the credit pool filled with AUSD from Agora's faucet (`fund-pool:fork`); then `check:deployment:fork`, which must pass in full |
+| Polaris for Business | http://localhost:3100 | the dev relayer adapter (a local key held to the production relayer policy; `POLARIS_LOCAL_FORK=1` lets it run on the fork because the RPC is on this machine), a fresh SQLite store, Halcyon's merchant seeded with test API keys and a webhook, registered on `MerchantRegistry` through the dashboard's registration API; the dashboard is signed in for Halcyon with a random local session |
+| The CRE underwriting trigger | http://127.0.0.1:2000/trigger | `workflows` `trigger:local`: the real `polaris-underwrite` handler on the CRE SDK's test runtime, reading Nansen, Zerion and Etherscan live with the keys in `workflows/.env`. A review that needs a provider without its key opens no line, and **Raise your limit** says which key is missing |
+| The Polaris app | http://localhost:3000 | the hosted checkout, with Face ID as in production: Mera's passkey ceremony with PRF derives the account and the receipt keys (no dev signer) |
 | Halcyon, the demo shop | http://127.0.0.1:3600 | `polarispay-sdk` against the real API and checkout |
-| A faucet | http://127.0.0.1:3650/mint | test dollars; the app's **Add money** offers it on this chain |
+| A faucet | http://127.0.0.1:3650/mint | $500 of AUSD a request, from a reserve the node's fourth account draws from Agora's faucet (10,000 a drip; the faucet allows one drip a minute for everyone, so a drip it refuses for that moves the fork's clock 61 seconds, and the log says so); the app's **Add money** offers it on this chain |
 | The CRE collections workflow | every minute, and on every `Reauthorized` | `workflows` `collections:local`: the real `polaris-collections` handler on the CRE SDK's test runtime, on both its triggers: the cron collects due Pay in 4 instalments through `CollectionsReceiver` (and dunns what fails), and the EVM log trigger on `PolarisCheckout.Reauthorized` collects a buyer the moment they sign again; it reports each run to the API (the dashboard's Collections card and Chainlink page, `installment.collected` webhooks) and logs to `.demo/logs/cre-collections.log` |
-| The CRE guardian | every minute | `workflows` `guardian:local`: the real `polaris-guardian` handler, reading **Chainlink's AUSD/USD on Monad mainnet** (public RPC, reads only; `DEMO_GUARDIAN_PRICE=mock` for the labelled local mock) and the pool on the local chain, and attesting to `GuardianReceiver`, which `PolarisCheckout.openPlan` asks before every new plan; `.demo/logs/cre-guardian.log` |
+| The CRE guardian | every minute | `workflows` `guardian:local`: the real `polaris-guardian` handler, reading **Chainlink's AUSD/USD on Monad mainnet** (public RPC, reads only) and the pool on the fork, and attesting to `GuardianReceiver`, which `PolarisCheckout.openPlan` asks before every new plan; `.demo/logs/cre-guardian.log`. Fork mode refuses to start without the mainnet feed (the Hardhat stack falls back to a labelled mock, or uses it with `DEMO_GUARDIAN_PRICE=mock`) |
+
+The three CRE runners deliver their reports as `cre workflow simulate
+--broadcast` would: `forwarder.report(...)` from the simulation transmitter.
+On the fork, a report's gas limit is sized from a traced delivery rather than
+`eth_estimateGas`, for the reason in
+[`packages/contracts/README.md`](packages/contracts/README.md#rehearse-real-ausd-on-a-fork).
+Fork mode needs anvil (`ANVIL=<path>` if it isn't on the `PATH` or in
+`~/.foundry/bin`) and the testnet RPC reachable for reads.
 
 Then: open the shop, add something to the bag, **check out with Polaris**. The
 checkout opens in a popup (the app's `/pay/[id]` sheet). Pay now, or choose
 Pay in 4: a new buyer has no line, so **Raise your limit** runs the CRE
-underwriting workflow first. The shop's order is marked paid by the Polaris
-webhook, and the merchant dashboard at http://localhost:3100/dashboard shows
-the payment and the plan. Before it prints its URLs, `demo:local` opens every
+underwriting workflow first (without provider keys it opens no line and says
+which key is missing; Pay now still works). The shop's order is marked paid by
+the Polaris webhook, and the merchant dashboard at
+http://localhost:3100/dashboard shows the payment and any plan; a payment by a
+buyer with a Face ID inbox reads "Sealed for the buyer" there. Before it prints its URLs, `demo:local` opens every
 page and API route once, so no first click waits for `next dev` to compile.
 `DEMO_FAST_PLANS=1` makes Pay in 4 instalments a minute apart instead of a
 week (and the loan engine's grace 15 minutes, so a missed payment is dunned before it is liquidated), so the collections run shows on camera (instalment 1 is collected about
 two minutes after checkout; Pay in 4's 10% APR is pro-rated over those minutes, so the plan shows $0.00 interest). Ports move with `DEMO_NODE_PORT`,
 `DEMO_BUSINESS_PORT`, `DEMO_APP_PORT`, `DEMO_SHOP_PORT`, `DEMO_TRIGGER_PORT`
 and `DEMO_FAUCET_PORT`. Logs and state are in `.demo/`; `.demo/demo.json`
-has every URL of the run.
+has every URL of the run, the chain mode and whether the app runs the dev
+signer.
 
 `pnpm demo:e2e` ([`scripts/demo-e2e.cjs`](scripts/demo-e2e.cjs), needs
 Playwright: `PLAYWRIGHT_MODULE=<path>`, and `CHROMIUM=<chrome.exe>` if its
 browser build isn't installed) drives that run headless and writes the
-screenshots in [`docs/demo`](docs/demo). It finds the run's URLs in
-`.demo/demo.json` (or `APP`, `SHOP`, `BUSINESS`, `RPC` and `FAUCET`). The committed ones are from a run in
-which all 24 steps passed (the `x-*` screens were captured right after, on the
-same run):
+screenshots in [`docs/demo`](docs/demo) (`OUT` to change it). It finds the
+run's URLs in `.demo/demo.json` (or `APP`, `SHOP`, `BUSINESS`, `RPC` and
+`FAUCET`). In fork mode every browser profile gets Chrome's virtual
+authenticator with PRF ([`scripts/lib/virtual-authenticator.cjs`](scripts/lib/virtual-authenticator.cjs)),
+so buyers sign in through the app's own passkey ceremony and Mera derives the
+account and receipt keys. Chrome attaches a virtual authenticator to one tab,
+and a passkey copied to another tab loses its PRF secret, so one tab per
+profile holds the authenticator and the app's other tabs (the shop's checkout
+popup) hand it their `navigator.credentials` calls; the ceremony and the PRF
+output are Chrome's. A step the run cannot reach is reported as not run, with
+the reason, never as a pass.
+
+On the fork (6 Oct 2026, testnet block 68,498,726, `DEMO_FAST_PLANS=1`, no
+provider keys in `workflows/.env`): `demo:e2e` 23 passed, 0 failed, 5 not run;
+`demo:e2e:split` 22 of 22. What passed: the passkey account, $1,000 of AUSD
+from Agora's faucet read from the chain, Pay now in the shop's popup, the
+sealed receipt (the server returns only ciphertext to the app's signed
+request, and the passkey opens it), Raise your limit naming the three missing
+provider keys with no line opened (for a buyer with an account and for a new
+buyer whose account the same tap created), Subscribe, a direct wallet
+payment, the dashboard's sealed payments with no item names, the merchant's
+registration, a dashboard payment link. Not run, because no line opened: Pay
+in 4's three steps, the collections step and the dashboard's plan step. Those
+screenshots are not committed. The screenshots committed below are from an
+earlier run on the Hardhat stack with the dev signer, in which all 24 steps of
+that version passed (the `x-*` screens were captured right after, on the same
+run):
 
 | Step | Screenshot |
 |---|---|
@@ -196,9 +236,10 @@ hers on a phone. Maya sees 2 of 4 paid and $80 in her account, in Activity
 on the phone and the desktop, and closes the split; Jon opens it afterwards
 and owes nothing. A second split, by named amounts, is paid in full. Each
 share is `PolarisSplit.payShare` on the local chain, relayed; every step is
-checked against the chain and `GET /api/public/splits/{id}`: 22 of 22, with
-the screens at 402×877 and 1440×900 in
-[`docs/design/split`](docs/design/split/README.md). In the app, **Split a
+checked against the chain and `GET /api/public/splits/{id}`: 22 of 22 on the
+Hardhat stack, with the screens at 402×877 and 1440×900 in
+[`docs/design/split`](docs/design/split/README.md), and 22 of 22 again on the
+fork with passkeys and AUSD (screens not committed). In the app, **Split a
 bill** is in Home's More sheet (on the desktop, in the Send widget and
 Activity's Your splits).
 
@@ -260,6 +301,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 | End to end | `DEMO_FAST_PLANS=1 pnpm demo:local` + `pnpm demo:e2e` | 24 of 24 steps (Pay now, Pay in 4 with CRE underwriting, a new buyer's one-tap line, a CRE collection, Subscribe, direct wallet pay, the dashboard, a dashboard payment link paid and reopened); [`docs/demo`](docs/demo) |
 | | `DEMO_FAST_PLANS=1 pnpm demo:local` + `pnpm demo:e2e:chainlink` | 18 of 18 steps (FX in pesos, CRE underwriting with the line labelled a local run, the guardian pausing and resuming Pay in 4 from Chainlink AUSD/USD on Monad mainnet with Pay now still working, a dunned buyer collected by the log trigger 2 s after signing again, the Chainlink dashboard); [`docs/demo/chainlink`](docs/demo/chainlink/README.md) |
 | | `pnpm demo:local` + `pnpm demo:e2e:split` | 22 of 22 steps (a split made on a phone, a share paid by a friend with no account and one with, the same share relayed twice paying once, the organiser's Activity, closing it, a split by named amounts paid in full); [`docs/design/split`](docs/design/split/README.md) |
+| | `DEMO_FAST_PLANS=1 pnpm demo:local` (fork mode) + `pnpm demo:e2e`, then `pnpm demo:e2e:split` | On an anvil fork of Monad testnet with Agora's AUSD, buyers signing in with passkeys on Chrome's virtual authenticator: 23 passed, 0 failed, 5 not run (Pay in 4, its collection and the dashboard's plan: no provider keys, so the review opened no line and said which keys it needs), and the split 22 of 22 (6 Oct 2026) |
 | | `pnpm --filter @polaris/business e2e:local` | 13 of 13 checks (SDK sessions, relayed Pay now and Pay in 4, verified webhooks, a collection) |
 | | `pnpm --filter @polarispay/contracts e2e:local` | all twelve flows (the credit guard and `reauthorize` among them); the buyer, sender and freelancer never hold MON |
 | | `pnpm --filter @polaris/cre-workflows e2e:local` | 12 passing (all three workflows and every trigger against real contracts on a local node) |
@@ -675,19 +717,27 @@ compiles) on the CRE SDK's test runtime: `trigger:local`,
   server wallet, but the dollar is `MockAUSD` (a labelled mock anyone can
   mint). The smoke test's Pay in 4 line is secured by collateral, because no
   CRE underwriting report has run there yet.
-- **The dev signer** stands in for Face ID in the demo (a key kept in the
-  browser; badge on every screen). Its receipt keys come from a stand-in PRF
-  output derived from that key, so sealed receipts open in the demo exactly
-  as they would after a Face ID; with a real passkey they are untested.
+- **The dev signer** stands in for Face ID in the screenshots in `docs/demo`
+  and on `DEMO_CHAIN=hardhat` (a key kept in the browser; badge on every
+  screen). `demo:local`'s default fork mode runs without it: there buyers sign
+  in with a passkey, and the automated run (`demo:e2e`) uses Chrome's virtual
+  authenticator with PRF, so the account and the receipt keys come from Mera's
+  own ceremony; sealed receipts opened that way on 6 Oct 2026. A real phone's
+  Face ID with this build has not been run.
+- **The fork** (`demo:local`'s default) is anvil reading Monad testnet's state
+  on this machine: Agora's real AUSD and faucet and Chainlink's
+  MockKeystoneForwarder as deployed there, but none of Monad's block timing or
+  gas-limit billing, and the faucet's one-minute cooldown is passed by moving
+  the fork's clock.
 - **The CRE runs** in the demo are the real workflow handlers on the SDK's test
   runtime (`trigger:local`, `collections:local`, `guardian:local`), not a DON
   or the CRE CLI; the guardian's AUSD/USD is Chainlink's real Monad mainnet
   feed, and its demo pause is the owner raising the threshold above that
   price ("threshold raised for demo"), never a faked price. The underwriting
-  run's evidence is the
-  underwriting package's synthesized fixtures ("fresh-account" for the buyer,
-  "strong" for the history wallet), and on chain 31337 with no wallet in the
-  browser a stand-in key signs the history wallet's proof (the app says so).
+  run reads Nansen, Zerion and Etherscan live with the keys in
+  `workflows/.env`, or opens no line and names the missing key; on a local
+  chain with no wallet in the browser a stand-in key signs the history
+  wallet's proof (the app says so).
   The credit line there names its report "CRE workflow, local run": only a
   DON-signed report is ever called "Verified by Chainlink CRE".
 - **The dashboard's local session** is `pnpm demo:local`'s own; the server

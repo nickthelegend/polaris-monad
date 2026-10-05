@@ -141,6 +141,8 @@ const PORTS = {
   faucet: port("DEMO_FAUCET_PORT", 3650),
 };
 const FAST_PLANS = process.env.DEMO_FAST_PLANS === "1";
+/** How long each server may take to answer its first page: a cold `next dev` compile on a slow or busy disk takes minutes. */
+const STARTUP_MS = Number(process.env.DEMO_STARTUP_TIMEOUT_MS || 900_000);
 /** Which chain: an anvil fork of Monad testnet with Agora's AUSD (the default), or the older Hardhat node and MockAUSD. */
 const CHAIN = (process.env.DEMO_CHAIN || "fork").toLowerCase();
 if (!["fork", "hardhat"].includes(CHAIN)) throw new Error(`DEMO_CHAIN is fork or hardhat (got ${JSON.stringify(process.env.DEMO_CHAIN)})`);
@@ -745,15 +747,15 @@ async function main() {
     const res = await fetch(`${BUSINESS_URL}/api/health`);
     const body = await res.json();
     return res.ok && body.data?.ok === true;
-  }, 300_000);
+  }, STARTUP_MS);
   // Register Halcyon on chain the way the dashboard does after a business is named
   // (useRegisterMerchant): the payout wallet signs the Registration the server
   // prepares, the relayer sends registerFor, and the local registry admin
   // activates it for Pay in 4.
   const registered = await registerMerchant(merchant);
   log(`registered ${MERCHANT_NAME} on MerchantRegistry through /api/merchant/registration: ${registered}`);
-  await until("the Polaris app", async () => (await fetch(`${APP_URL}/`)).ok, 300_000);
-  await until("the demo shop", async () => (await fetch(`${SHOP_URL}/`)).ok, 300_000);
+  await until("the Polaris app", async () => (await fetch(`${APP_URL}/`)).ok, STARTUP_MS);
+  await until("the demo shop", async () => (await fetch(`${SHOP_URL}/`)).ok, STARTUP_MS);
 
   // Compile every page and route now, so nobody waits on a first click: the API first (the app's
   // pages call it while they render), with the shop's pages beside it; then the app.
