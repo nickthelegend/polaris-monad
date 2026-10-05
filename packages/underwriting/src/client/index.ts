@@ -22,8 +22,8 @@
 
 import type { Derivation } from "../core/facts.ts";
 import type { ScoreBreakdown } from "../core/score.ts";
-import type { Address, CreditDecision, Facts, Hex } from "../core/types.ts";
-import type { Assessment } from "../node/service.ts";
+import type { Address, CreditDecision, Facts, Hex, ProviderMode } from "../core/types.ts";
+import type { Assessment, NotConfigured } from "../node/service.ts";
 
 export { poweredBy, PROVIDER_NAMES, type ProviderCredit } from "../core/reasons.ts";
 
@@ -147,9 +147,15 @@ export function createUnderwritingClient(opts: UnderwritingClientOptions) {
   }
 
   return {
-    /** Modes (live or fixture) per provider, and the facts and model versions. */
+    /** Each provider live or not_configured (with the variable it needs), and the facts and model versions. */
     health: () =>
-      call<{ ok: boolean; service: string; version: { facts: number; model: number }; modes: Record<string, "live" | "fixture"> }>("/health", {
+      call<{
+        ok: boolean;
+        service: string;
+        version: { facts: number; model: number };
+        modes: Record<string, ProviderMode>;
+        notConfigured: NotConfigured[];
+      }>("/health", {
         method: "GET",
       }),
 

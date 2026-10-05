@@ -1,6 +1,7 @@
 /**
  * The Etherscan V2 client: past loans closed by a lender, and the transfer
- * history of a gasless account. `ETHERSCAN_API_KEY` makes it live.
+ * history of a gasless account. `ETHERSCAN_API_KEY` makes it live; without
+ * it, it is not configured and every call fails with `not_configured`.
  */
 
 import type { RequestSpec } from "../core/providers/common.ts";
@@ -12,7 +13,7 @@ import { jsonBody, ProviderError, statusError, type HttpRequest } from "./http.t
 export class EtherscanClient extends ProviderClient {
   constructor(opts: ClientOptions = {}) {
     // Free tier: 3 calls a second.
-    super(opts, { minIntervalMs: 340 });
+    super(opts, { minIntervalMs: 340, provider: "etherscan" });
   }
 
   /** The key rides in the query string; it is added here, after caching keys are taken. */

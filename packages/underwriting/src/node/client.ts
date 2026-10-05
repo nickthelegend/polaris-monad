@@ -1,13 +1,20 @@
 /**
- * What every provider client shares: live or fixture mode, retries, the rate
- * limiter, the cache, and the credit log.
+ * What every provider client shares: live or not configured, retries, the
+ * rate limiter, the cache, and the credit log.
+ *
+ * There are two modes and no third. A keyed provider (Nansen, Zerion,
+ * Etherscan) with its key is live; without one it is `not_configured`: every
+ * call fails at once with a `not_configured` ProviderError naming the missing
+ * variable, nothing is sent, and nothing answers in its place. Public RPCs
+ * need no key and are always live.
  */
 
-import type { DataMode } from "../core/types.ts";
+import { PROVIDER_KEYS } from "../core/constants.ts";
 import type { RequestSpec } from "../core/providers/common.ts";
-import { DEFAULT_FIXTURES_DIR, fixtureTransport } from "./fixtures.ts";
+import type { KeyedProvider, ProviderMode } from "../core/types.ts";
 import {
   fetchTransport,
+  ProviderError,
   RateLimiter,
   send,
   systemClock,
@@ -20,12 +27,9 @@ import {
 } from "./http.ts";
 
 export interface ClientOptions {
-  /** A key makes the client live; without one it reads fixtures. */
+  /** The provider's key. A keyed provider without one is not configured. */
   apiKey?: string;
-  /** Force a mode. `live` without a key sends unauthenticated requests. */
-  mode?: DataMode;
-  fixturesDir?: string;
-  /** Replace the transport entirely (tests). */
+  /** Replace the network (tests). The mode still follows the key. */
   transport?: HttpTransport;
   retry?: Partial<RetryPolicy>;
   clock?: Clock;
@@ -39,25 +43,31 @@ export interface ClientOptions {
 }
 
 export abstract class ProviderClient {
-  readonly mode: DataMode;
+  readonly mode: ProviderMode;
+  readonly provider: KeyedProvider | "rpc";
   protected readonly apiKey: string | undefined;
   private readonly transport: HttpTransport;
   private readonly limiter: RateLimiter;
   private readonly cache: TtlCache;
   private readonly opts: ClientOptions;
 
-  protected constructor(opts: ClientOptions, defaults: { minIntervalMs: number }) {
+  protected constructor(opts: ClientOptions, defaults: { minIntervalMs: number; provider: KeyedProvider | "rpc" }) {
     this.opts = opts;
+    this.provider = defaults.provider;
     this.apiKey = opts.apiKey && opts.apiKey.trim() !== "" ? opts.apiKey.trim() : undefined;
-    this.mode = opts.mode ?? (this.apiKey ? "live" : "fixture");
+    this.mode = defaults.provider === "rpc" || this.apiKey ? "live" : "not_configured";
     const clock = opts.clock ?? systemClock;
-    this.transport =
-      opts.transport ?? (this.mode === "live" ? fetchTransport : fixtureTransport(opts.fixturesDir ?? DEFAULT_FIXTURES_DIR));
-    this.limiter = new RateLimiter(opts.minIntervalMs ?? (this.mode === "live" ? defaults.minIntervalMs : 0), clock);
+    this.transport = opts.transport ?? fetchTransport;
+    this.limiter = new RateLimiter(opts.minIntervalMs ?? defaults.minIntervalMs, clock);
     this.cache = new TtlCache(opts.cacheTtlMs ?? 10 * 60_000, clock);
   }
 
-  /** Add this provider's secret to a request. Fixture mode never sees the key. */
+  /** The variable that holds this provider's key, or null for a public RPC. */
+  get keyVariable(): string | null {
+    return this.provider === "rpc" ? null : PROVIDER_KEYS[this.provider];
+  }
+
+  /** Add this provider's secret to a request. */
   protected abstract authorize(req: HttpRequest): HttpRequest;
 
   /** Send a request built by the core (a recipe step): authorized, retried, rate-limited, cached. */
@@ -66,6 +76,18 @@ export abstract class ProviderClient {
   }
 
   protected request(spec: RequestSpec): Promise<HttpResponse> {
+    if (this.mode === "not_configured") {
+      return Promise.reject(
+        new ProviderError({
+          provider: this.provider,
+          endpoint: spec.endpoint,
+          status: null,
+          code: "not_configured",
+          message: `${this.provider} is not configured (${this.keyVariable} is not set)`,
+          retryable: false,
+        }),
+      );
+    }
     return send(spec, {
       transport: this.transport,
       retry: this.opts.retry,
@@ -74,7 +96,7 @@ export abstract class ProviderClient {
       cache: this.cache,
       random: this.opts.random,
       onResponse: this.opts.onResponse,
-      authorize: this.mode === "live" && this.apiKey ? (r) => this.authorize(r) : undefined,
+      authorize: this.apiKey ? (r) => this.authorize(r) : undefined,
     });
   }
 }

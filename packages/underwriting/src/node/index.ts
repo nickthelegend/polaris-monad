@@ -3,7 +3,8 @@
  * clients, the evidence collector, the service and the HTTP handler).
  *
  * For the CRE workflow import `@polarispay/underwriting/core` instead: it has
- * no Node dependency.
+ * no Node dependency. Test doubles for the provider APIs (fixture files and
+ * transports) are in `@polarispay/underwriting/testing`, for tests only.
  */
 
 export * from "../core/index.ts";
@@ -24,7 +25,6 @@ export {
   type RetryPolicy,
   type ProviderErrorCode,
 } from "./http.ts";
-export { fixtureTransport, fixtureResponse, locateFixture, DEFAULT_FIXTURES_DIR, type FixtureFile } from "./fixtures.ts";
 export type { ClientOptions } from "./client.ts";
 export { NansenClient } from "./nansen.ts";
 export { ZerionClient } from "./zerion.ts";
@@ -38,6 +38,7 @@ export {
   SERVICE_VERSION,
   type AssessRequest,
   type Assessment,
+  type NotConfigured,
   type UnderwriterOptions,
 } from "./service.ts";
 export { createRouter, createNodeHandler, createFetchHandler, type HandlerOptions, type RouteRequest, type RouteResponse } from "./handler.ts";

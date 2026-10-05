@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { LIQUIDATION_POOLS } from "../src/core/constants.ts";
 import { nansenRequests } from "../src/core/providers/nansen.ts";
-import { fixtureTransport } from "../src/node/fixtures.ts";
+import { fixtureTransport } from "../src/testing/fixtures.ts";
 import { ProviderError } from "../src/node/http.ts";
 import { NansenClient } from "../src/node/nansen.ts";
 import { ZerionClient } from "../src/node/zerion.ts";
@@ -13,10 +13,18 @@ const DAY = 86_400;
 describe("NansenClient against fixtures", () => {
   const { nansen } = fixtureProviders();
 
-  it("is in fixture mode without a key, and live with one", () => {
-    assert.equal(new NansenClient().mode, "fixture");
+  it("is not configured without a key, and live with one: a keyless call sends nothing and names the variable", async () => {
+    const t = scripted(fixtureTransport(), []);
+    const keyless = new NansenClient({ transport: t });
+    assert.equal(keyless.mode, "not_configured");
+    assert.equal(new NansenClient({ apiKey: "   " }).mode, "not_configured", "a blank key is no key");
     assert.equal(new NansenClient({ apiKey: "nk_live" }).mode, "live");
-    assert.equal(nansen.mode, "fixture");
+    assert.equal(nansen.mode, "live");
+    await assert.rejects(
+      keyless.firstFunder(LINKED.strong),
+      (e: ProviderError) => e.code === "not_configured" && !e.retryable && e.status === null && /NANSEN_API_KEY is not set/.test(e.message),
+    );
+    assert.equal(t.calls.length, 0, "nothing is sent, and nothing answers in Nansen's place");
   });
 
   it("first-funder", async () => {
@@ -46,19 +54,18 @@ describe("NansenClient against fixtures", () => {
   });
 
   it("a request with no fixture fails; it is never answered as empty", async () => {
-    await assert.rejects(nansen.firstFunder("0x0000000000000000000000000000000000000bad"), (e: ProviderError) => e.code === "fixture_missing" && !e.retryable);
+    await assert.rejects(nansen.firstFunder("0x0000000000000000000000000000000000000bad"), (e: ProviderError) => e.code === "not_found" && /no fixture recorded/.test(e.message) && !e.retryable);
   });
 
-  it("maps Nansen's errors: out of credits, and the x402 challenge a keyless call gets", async () => {
+  it("maps Nansen's errors: out of credits, and the x402 challenge a refused key gets", async () => {
     const noCredits = new NansenClient({
-      mode: "live",
       apiKey: "k",
       transport: scripted(fixtureTransport(), [{ match: host("nansen"), respond: () => status(403, { code: "insufficient_credits", message: "Not enough credits", status: 403, error: "Forbidden", request_id: "r", doc_url: "d" }) }]),
     });
     await assert.rejects(noCredits.firstFunder(LINKED.strong), (e: ProviderError) => e.code === "insufficient_credits" && !e.retryable);
 
-    const keyless = new NansenClient({ mode: "live", transport: scripted(fixtureTransport(), [{ match: host("nansen"), respond: () => status(402, {}) }]) });
-    await assert.rejects(keyless.firstFunder(LINKED.strong), (e: ProviderError) => e.code === "unauthorized");
+    const refused = new NansenClient({ apiKey: "revoked", transport: scripted(fixtureTransport(), [{ match: host("nansen"), respond: () => status(402, {}) }]) });
+    await assert.rejects(refused.firstFunder(LINKED.strong), (e: ProviderError) => e.code === "unauthorized");
   });
 
   it("a body Nansen's schema refuses fails in fixture mode as it would live: 422 unknown_field, request_rejected, no retry", async () => {
@@ -66,26 +73,23 @@ describe("NansenClient against fixtures", () => {
     // The alias the old recipe sent to first-funder: its schema knows only `address`.
     const wrong = { ...good, body: JSON.stringify({ wallet_address: LINKED.strong, chain: "all" }) };
     const t = scripted(fixtureTransport(), []);
-    const res = await new NansenClient({ transport: t, retry: { attempts: 3 } }).execute(wrong);
+    const res = await new NansenClient({ apiKey: "k", transport: t, retry: { attempts: 3 } }).execute(wrong);
     assert.equal(res.status, 422);
     const body = JSON.parse(res.body) as { code: string; param: string };
     assert.deepEqual([body.code, body.param], ["unknown_field", "wallet_address"]);
     assert.equal(t.calls.length, 1, "a refused body is not retried");
 
-    const live = new NansenClient({ mode: "live", apiKey: "k", transport: scripted(fixtureTransport(), [{ match: host("nansen"), respond: () => status(422, body) }]) });
+    const live = new NansenClient({ apiKey: "k", transport: scripted(fixtureTransport(), [{ match: host("nansen"), respond: () => status(422, body) }]) });
     await assert.rejects(live.firstFunder(LINKED.strong), (e: ProviderError) => e.code === "request_rejected" && !e.retryable && /param wallet_address/.test(e.message));
 
     // The builders refuse to build such a body at all, before any credit is spent.
     assert.throws(() => nansenRequests.relatedWallets(LINKED.strong, undefined as unknown as string), /missing_field: chain/);
   });
 
-  it("sends the key in the apikey header only when live", async () => {
+  it("sends the key in the apikey header", async () => {
     const t = scripted(fixtureTransport(), []);
-    await new NansenClient({ mode: "live", apiKey: "nk_secret", transport: t }).firstFunder(LINKED.strong);
+    await new NansenClient({ apiKey: "nk_secret", transport: t }).firstFunder(LINKED.strong);
     assert.equal(t.calls[0]!.headers.apikey, "nk_secret");
-    const f = scripted(fixtureTransport(), []);
-    await new NansenClient({ transport: f }).firstFunder(LINKED.strong);
-    assert.equal(f.calls[0]!.headers.apikey, undefined);
   });
 });
 
@@ -122,8 +126,16 @@ describe("ZerionClient against fixtures", () => {
 
   it("authenticates with HTTP Basic, key as the username", async () => {
     const t = scripted(fixtureTransport(), []);
-    await new ZerionClient({ mode: "live", apiKey: "zk_dev_123", transport: t }).positionsStables(LINKED.strong);
+    await new ZerionClient({ apiKey: "zk_dev_123", transport: t }).positionsStables(LINKED.strong);
     assert.equal(t.calls[0]!.headers.Authorization, "Basic emtfZGV2XzEyMzo=");
+  });
+
+  it("without ZERION_API_KEY it is not configured and sends nothing", async () => {
+    const t = scripted(fixtureTransport(), []);
+    const keyless = new ZerionClient({ transport: t });
+    assert.equal(keyless.mode, "not_configured");
+    await assert.rejects(keyless.positionsStables(LINKED.strong), (e: ProviderError) => e.code === "not_configured" && /ZERION_API_KEY/.test(e.message));
+    assert.equal(t.calls.length, 0);
   });
 });
 
@@ -139,8 +151,20 @@ describe("EtherscanClient and RpcClient against fixtures", () => {
   it("puts the key in the query string after the cache key is taken", async () => {
     const { EtherscanClient } = await import("../src/node/etherscan.ts");
     const t = scripted(fixtureTransport(), []);
-    await new EtherscanClient({ mode: "live", apiKey: "ek", transport: t }).liquidationCount(1, LINKED.strong, []);
+    await new EtherscanClient({ apiKey: "ek", transport: t }).liquidationCount(1, LINKED.strong, []);
     assert.match(t.calls[0]!.url, /&apikey=ek$/);
+  });
+
+  it("Etherscan without its key is not configured; a public RPC needs none and is always live", async () => {
+    const { EtherscanClient } = await import("../src/node/etherscan.ts");
+    const { RpcClient } = await import("../src/node/rpc.ts");
+    const t = scripted(fixtureTransport(), []);
+    const keyless = new EtherscanClient({ transport: t });
+    assert.equal(keyless.mode, "not_configured");
+    await assert.rejects(keyless.liquidationCount(1, LINKED.strong, []), (e: ProviderError) => e.code === "not_configured" && /ETHERSCAN_API_KEY/.test(e.message));
+    assert.equal(t.calls.length, 0);
+    assert.equal(new RpcClient("https://rpc.example", 1).mode, "live");
+    assert.equal(accountRpc.mode, "live");
   });
 
   it("reads nonces and balances", async () => {

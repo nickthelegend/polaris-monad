@@ -5,8 +5,9 @@
  * The recipe decides what to ask and how to read each answer, including every
  * fallback, and is the same code the CRE workflow runs. This module only sends:
  * each batch concurrently, through the client for its provider, which adds the
- * key, retries, rate-limits and caches. It then stamps each piece of evidence
- * with whether it came from a live API or a fixture.
+ * key, retries, rate-limits and caches. A provider without its key answers
+ * every request `not_configured` without sending it, and the recipe moves on
+ * to the next source.
  */
 
 import type { RequestSpec } from "../core/providers/common.ts";
@@ -19,7 +20,7 @@ import {
   type RecipeOptions,
   type Reply,
 } from "../core/recipe.ts";
-import type { Address, DataMode, Evidence, SubjectEvidence } from "../core/types.ts";
+import type { Address } from "../core/types.ts";
 import type { EtherscanClient } from "./etherscan.ts";
 import { ProviderError } from "./http.ts";
 import type { NansenClient } from "./nansen.ts";
@@ -65,28 +66,14 @@ export function sender(p: Providers): (spec: RequestSpec) => Promise<Reply> {
   };
 }
 
-function stampModes(e: SubjectEvidence, p: Providers): SubjectEvidence {
-  const modeOf: Record<string, DataMode> = { nansen: p.nansen.mode, zerion: p.zerion.mode, etherscan: p.etherscan.mode, rpc: p.accountRpc.mode };
-  const out: Record<string, unknown> = { address: e.address, role: e.role };
-  for (const [k, v] of Object.entries(e)) {
-    if (k === "address" || k === "role") continue;
-    const ev = v as Evidence<unknown>;
-    const mode = modeOf[ev.source.split(".")[0]!];
-    out[k] = mode && ev.status !== "missing" ? { ...ev, mode } : ev;
-  }
-  return out as unknown as SubjectEvidence;
-}
-
 function recipeOptions(p: Providers, o: CollectOptions): RecipeOptions {
   return { ...o, accountRpcUrl: p.accountRpc.url, historyRpcUrls: p.historyRpcs.map((c) => c.url) };
 }
 
-export async function collectAccount(address: Address, p: Providers, o: CollectOptions): Promise<Collected> {
-  const c = await runAsync(accountRecipe(address, recipeOptions(p, o)), sender(p));
-  return { issues: c.issues, evidence: stampModes(c.evidence, p) };
+export function collectAccount(address: Address, p: Providers, o: CollectOptions): Promise<Collected> {
+  return runAsync(accountRecipe(address, recipeOptions(p, o)), sender(p));
 }
 
-export async function collectLinked(address: Address, p: Providers, o: CollectOptions): Promise<Collected> {
-  const c = await runAsync(linkedRecipe(address, recipeOptions(p, o)), sender(p));
-  return { issues: c.issues, evidence: stampModes(c.evidence, p) };
+export function collectLinked(address: Address, p: Providers, o: CollectOptions): Promise<Collected> {
+  return runAsync(linkedRecipe(address, recipeOptions(p, o)), sender(p));
 }

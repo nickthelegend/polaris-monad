@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { creEnv, dotEnv, ensureUnderwritingBuilt, envWithBun, findCre, parseSecretsNames, ROOT, secretEnvFor } from "./cre.mjs";
+import { creEnv, dotEnv, ensureUnderwritingBuilt, envWithBun, findCre, parseSecretsNames, ROOT, secretEnvFor, withoutMissingKeys } from "./cre.mjs";
 
 export { ROOT };
 
@@ -53,27 +53,8 @@ export function missingSecretEnv(env, { target, workflows, root = ROOT }) {
   return secretEnvFor({ root, target, workflows }).filter((s) => env[s.envVar] === undefined);
 }
 
-/**
- * Underwriting's config for one run with every provider whose key is empty
- * left out (`secrets.<provider>: null`). Under Confidential HTTP the workflow
- * never reads a key, so it cannot tell an empty one from a real one: without
- * this, the enclave would template "" into each paid request and spend the
- * run's calls on 401s. `secretsNames` maps each secret id to its variables
- * (parseSecretsNames). Returns the config and the providers left out.
- */
-export function withoutMissingKeys(config, secretsNames, env) {
-  const secrets = { ...config.secrets };
-  const leftOut = [];
-  for (const [provider, id] of Object.entries(secrets)) {
-    if (!id) continue;
-    const vars = secretsNames[id] ?? [id];
-    if (!vars.some((v) => typeof env[v] === "string" && env[v].trim() !== "")) {
-      secrets[provider] = null;
-      leftOut.push(provider);
-    }
-  }
-  return { config: { ...config, secrets }, leftOut };
-}
+/** Underwriting's config with every provider whose key is empty left out: see cre.mjs. */
+export { withoutMissingKeys };
 
 export { parseSecretsNames };
 

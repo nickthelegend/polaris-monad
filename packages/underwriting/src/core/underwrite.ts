@@ -55,6 +55,20 @@ export interface UnderwriteOutcome {
   attest: boolean;
   /** `<role>.<field>` for everything that kept it from being final. */
   missing: string[];
+  /**
+   * `<role>.<field>` for evidence no configured provider could read (its key is
+   * not set here): left out, earning no points (facts.ts). When an entry of
+   * `missing` is here too (a risk check), asking again cannot help until the
+   * key is set; `decision.headline` says reviews aren't set up.
+   */
+  absent: string[];
+  /**
+   * Nothing can be attested, and that is for want of provider keys rather
+   * than of history or of a source that may answer later: not final only
+   * because absent risk checks are, or a thin file whose history was absent.
+   * The CRE workflow reports this as "unavailable", never as a thin file.
+   */
+  unavailable: boolean;
   facts: Facts;
   /**
    * The history wallet the report names, so the receiver can hold it to this
@@ -88,10 +102,18 @@ export function underwrite(input: UnderwriteInput): UnderwriteOutcome {
   // A linked wallet that is the account itself links nothing (deriveFacts drops it too).
   const linkedWallet = derivation.linked ? (derivation.linked.address as Address) : null;
 
+  // A risk check no configured provider can run (only those are both absent and missing) keeps it from
+  // ever being final until the key is set: no retry will finish it, whatever else is still missing.
+  const absent = derivation.absent;
+  const waitsOnKeys = !final && missing.some((m) => absent.includes(m));
+
   // A report for an empty account opens ScoreManager's $200 floor unsecured: thin facts are never attested
   // (declines are). The same gate as the CRE workflow's; see attest.ts.
   const gaps = attestGaps(derivation.facts);
   const attest = final && gaps.length === 0;
+  // A thin file whose age or activity no configured provider could read may not be thin at all.
+  const thinForWantOfKeys = final && gaps.length > 0 && absent.some((a) => a.endsWith(".firstSeenAt") || a.endsWith(".sentCount"));
+  const unavailable = (waitsOnKeys && !missing.includes("linked.ownership")) || thinForWantOfKeys;
 
   const breakdown = scoreBreakdown(derivation.facts);
   const reasons = explainFacts(derivation.facts, breakdown, derivation);
@@ -103,7 +125,15 @@ export function underwrite(input: UnderwriteInput): UnderwriteOutcome {
     purchase: input.purchase ?? null,
     reasons,
     hasLinked: derivation.linked !== null,
-    pending: final ? null : missing.every((m) => m === "linked.ownership") ? "ownership" : "checks",
+    pending: final
+      ? thinForWantOfKeys
+        ? "unavailable"
+        : null
+      : missing.every((m) => m === "linked.ownership")
+        ? "ownership"
+        : waitsOnKeys
+          ? "unavailable"
+          : "checks",
     thinFile: gaps,
   });
 
@@ -113,6 +143,8 @@ export function underwrite(input: UnderwriteInput): UnderwriteOutcome {
     final,
     attest,
     missing,
+    absent,
+    unavailable,
     facts: derivation.facts,
     linkedWallet,
     report: attest ? encodeUnderwritingReport([{ user: input.user, linkedWallet, facts: derivation.facts }]) : null,

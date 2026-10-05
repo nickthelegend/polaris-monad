@@ -18,6 +18,12 @@
  * credential Confidential HTTP templates into Zerion's Basic header, which the
  * enclave cannot encode itself (secrets.yaml).
  *
+ * `workflow simulate ./underwriting` without `--config` runs on the target's
+ * config with every provider whose key is empty here left out
+ * (`secrets.<provider>: null`, written to workflows/.local/), so the run
+ * reports it as not configured rather than template an empty key into a paid
+ * request; with every key set, nothing changes.
+ *
  * Before `workflow build|simulate|deploy|hash` it builds @polarispay/underwriting
  * when its dist is missing or stale: the underwriting workflow bundles that
  * package's pure core, and CRE's bundler (Bun.build, target browser) resolves
@@ -25,9 +31,9 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { binaryName, officialInstallDir, TOOLS_DIR } from "./install-cre.mjs";
@@ -129,6 +135,15 @@ const withoutComment = (line) => line.replace(/\s+#.*$/, "").replace(/^#.*$/, ""
  * rather than guess.
  */
 export function secretsPathOf(workflowYaml, target) {
+  return artifactOf(workflowYaml, target, "secrets-path");
+}
+
+/** The `config-path` a workflow.yaml gives one target, as written (relative to the workflow's folder), or null. */
+export function configPathOf(workflowYaml, target) {
+  return artifactOf(workflowYaml, target, "config-path");
+}
+
+function artifactOf(workflowYaml, target, key) {
   let inTarget = false;
   let found = false;
   for (const raw of workflowYaml.split(/\r?\n/)) {
@@ -140,7 +155,7 @@ export function secretsPathOf(workflowYaml, target) {
       found ||= inTarget;
       continue;
     }
-    const m = inTarget && /^\s+secrets-path:\s*(.*)$/.exec(line);
+    const m = inTarget && new RegExp(`^\\s+${key}:\\s*(.*)$`).exec(line);
     if (m) {
       const path = unquote(m[1]);
       return path === "" ? null : path;
@@ -229,12 +244,72 @@ export function creEnv(env = envWithBun(), file = join(ROOT, ".env"), root = ROO
   return out;
 }
 
+/**
+ * Underwriting's config for one run with every provider whose key is empty
+ * left out (`secrets.<provider>: null`). Under Confidential HTTP the workflow
+ * never reads a key, so it cannot tell an empty one from a real one: without
+ * this, the enclave would template "" into each paid request and spend the
+ * run's calls on 401s, where the provider is simply not configured.
+ * `secretsNames` maps each secret id to its variables (parseSecretsNames).
+ * Returns the config and the providers left out.
+ */
+export function withoutMissingKeys(config, secretsNames, env) {
+  const secrets = { ...config.secrets };
+  const leftOut = [];
+  for (const [provider, id] of Object.entries(secrets)) {
+    if (!id) continue;
+    const vars = secretsNames[id] ?? [id];
+    if (!vars.some((v) => typeof env[v] === "string" && env[v].trim() !== "")) {
+      secrets[provider] = null;
+      leftOut.push(provider);
+    }
+  }
+  return { config: { ...config, secrets }, leftOut };
+}
+
+/**
+ * For `workflow simulate ./underwriting -T <target>` without `--config`: the
+ * args with `--config` pointing at the target's config minus the providers
+ * whose key is empty in `env` (written to workflows/.local/), and those
+ * providers; null when every key is set or the run is something else.
+ */
+export function underwritingSimulateConfig(args, env, root = ROOT) {
+  if (args[0] !== "workflow" || args[1] !== "simulate") return null;
+  if ((args[2] ?? "").replace(/^\.\//, "").replace(/\/$/, "") !== "underwriting") return null;
+  if (args.includes("--config") || args.includes("--no-config") || args.includes("--default-config")) return null;
+  const at = args.findIndex((a) => a === "-T" || a === "--target");
+  const target = at > 0 ? args[at + 1] : undefined;
+  if (!target) return null;
+  const dir = join(root, "underwriting");
+  const rel = configPathOf(readFileSync(join(dir, "workflow.yaml"), "utf8"), target);
+  if (!rel || !existsSync(join(dir, rel))) return null;
+  const config = JSON.parse(readFileSync(join(dir, rel), "utf8"));
+  const secretsNames = parseSecretsNames(readFileSync(join(root, "secrets.yaml"), "utf8"));
+  const { config: out, leftOut } = withoutMissingKeys(config, secretsNames, env);
+  if (leftOut.length === 0) return null;
+  mkdirSync(join(root, ".local"), { recursive: true });
+  const file = join(root, ".local", `underwriting.${target}.simulate.json`);
+  writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`);
+  // The CLI resolves --config against the workflow's folder and refuses long paths: pass it relative.
+  const arg = relative(dir, file).split(sep).join("/");
+  return { args: [...args, "--config", arg], leftOut };
+}
+
 const BUNDLING = new Set(["build", "simulate", "deploy", "hash"]);
 
 export function runCre(args, opts = {}) {
   const cre = findCre();
   if (args[0] === "workflow" && BUNDLING.has(args[1])) ensureUnderwritingBuilt();
-  return spawnSync(cre, args, { cwd: ROOT, stdio: "inherit", env: creEnv(), ...opts });
+  const env = creEnv();
+  // What the CLI will see: the shell's value, else workflows/.env's.
+  const seen = { ...env };
+  for (const [k, v] of Object.entries(dotEnv())) if (!seen[k]) seen[k] = v;
+  const partial = underwritingSimulateConfig(args, seen);
+  if (partial) {
+    const names = [...new Set(partial.leftOut.map((p) => (p === "zerionBasicAuth" ? "zerion" : p)))];
+    console.log(`underwriting: ${names.join(", ")} not configured here (empty key): this run leaves them out and reports them as not configured.`);
+  }
+  return spawnSync(cre, partial ? partial.args : args, { cwd: ROOT, stdio: "inherit", env, ...opts });
 }
 
 if (process.argv[1] && /cre\.mjs$/.test(process.argv[1])) {

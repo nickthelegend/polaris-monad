@@ -31,6 +31,12 @@
  * requests carry no key: plain mode adds each node's copy here (Etherscan's in
  * its query string, the only place its GET API takes one), and under
  * Confidential HTTP the keys never leave the enclave. Keys are never logged.
+ *
+ * A provider with no key (node mode: no secret value; Confidential HTTP: no
+ * secret id) is not configured: its requests get the recipe's
+ * `notConfiguredReply` without being sent or counted against the budget, the
+ * evidence only it could read is absent, and the observation names it. No
+ * other data ever answers in its place.
  */
 
 import { consensusIdenticalAggregation, cre, type HTTPSendRequester, type NodeRuntime, type Runtime } from "@chainlink/cre-sdk";
@@ -39,6 +45,8 @@ import {
   all,
   type Collected,
   linkedRecipe,
+  notConfiguredProviders,
+  notConfiguredReply,
   type RecipeOptions,
   type Reply,
   type RequestSpec,
@@ -81,6 +89,12 @@ export interface Observation {
   final: boolean;
   /** `<role>.<field>` list, comma-joined: what kept the run from being final. */
   missing: string;
+  /** `<role>.<field>` list, comma-joined: what no configured provider could read (no points). */
+  absent: string;
+  /** The keyed providers this run needed but has no key for, comma-joined (`nansen,zerion`). */
+  notConfigured: string;
+  /** Nothing can be attested for want of those keys (the core's `unavailable`): not thin, not a retry. */
+  unavailable: boolean;
   walletAgeDays: number;
   txCount: number;
   stableBalance: bigint;
@@ -126,9 +140,7 @@ export function creSender(
   const http = new cre.capabilities.HTTPClient();
   return (spec) => {
     const auth = authorize(spec, req.keys);
-    if ("missingKey" in auth) {
-      return { ok: false, code: "unauthorized", retryable: false, retryAfterMs: null, message: `${spec.provider}: no API key configured` };
-    }
+    if ("missingKey" in auth) return notConfiguredReply(spec);
     if (log.length >= req.httpBudget) {
       return {
         ok: false,
@@ -203,11 +215,17 @@ export function gather(send: Sender, req: Omit<EvidenceRequest, "keys">, log: re
     linkVerified: req.wallet !== null,
     options: { allowPartial: req.allowPartial },
   });
-  const issues = [...new Set([...account.issues, ...(linked?.issues ?? [])].map((i) => `${i.source}:${i.code}`))].join(",");
+  const found = [...account.issues, ...(linked?.issues ?? [])];
+  const issues = [...new Set(found.map((i) => `${i.source}:${i.code}`))].join(",");
   if (issues) note(`provider issues: ${issues.slice(0, 900)}`);
+  const notConfigured = notConfiguredProviders(found);
+  if (notConfigured.length > 0) note(`not configured: ${notConfigured.join(", ")} (absent: ${out.absent.join(",") || "nothing"})`);
   return {
     final: out.final,
     missing: out.missing.join(","),
+    absent: out.absent.join(","),
+    notConfigured: notConfigured.join(","),
+    unavailable: out.unavailable,
     walletAgeDays: out.facts.walletAgeDays,
     txCount: out.facts.txCount,
     stableBalance: out.facts.stableBalance,
@@ -372,9 +390,7 @@ export function confidentialSender(runtime: Runtime<unknown>, req: ConfidentialE
   const http = new cre.capabilities.HTTPClient();
   return (spec) => {
     const secretId = secretIdFor(spec.provider, req.secretIds);
-    if (spec.provider !== "rpc" && !secretId) {
-      return { ok: false, code: "unauthorized", retryable: false, retryAfterMs: null, message: `${spec.provider}: no API key configured` };
-    }
+    if (spec.provider !== "rpc" && !secretId) return notConfiguredReply(spec);
     if (log.length >= req.httpBudget) {
       return {
         ok: false,

@@ -1,7 +1,7 @@
 /**
  * The underwriting HTTP API, for the app and the gateway.
  *
- *   GET  /health                  modes (live or fixture per provider) and versions
+ *   GET  /health                  each provider live or not_configured, and versions
  *   POST /v1/underwrite           evidence → Facts, report, score, decision, reasons
  *   POST /v1/explain              Facts, or an UnderwritingReceiver report → score, decision, reasons
  *   GET  /v1/link-message         the exact text a linked wallet signs
@@ -179,7 +179,11 @@ export function createRouter(underwriter: Underwriter, opts: HandlerOptions = {}
 
       if (url.pathname === "/health") {
         if (req.method !== "GET") throw new HttpProblem(405, "method_not_allowed", "use GET");
-        return json(200, { ok: true, service: "polaris-underwriting", version: SERVICE_VERSION, modes: underwriter.modes() }, c);
+        return json(
+          200,
+          { ok: true, service: "polaris-underwriting", version: SERVICE_VERSION, modes: underwriter.modes(), notConfigured: underwriter.notConfigured() },
+          c,
+        );
       }
 
       if (!url.pathname.startsWith("/v1/")) throw new HttpProblem(404, "not_found", "no such route");

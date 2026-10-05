@@ -30,9 +30,10 @@ shows.
 4. **The credit line says who delivered its report.** On the local chain it
    reads "CRE workflow, local run"; do not caption it "Verified by Chainlink
    CRE".
-5. **The underwriting evidence is sample data** on the local chain (the
-   underwriting package's synthesized fixtures): say "sample history" if the
-   reasons are read aloud.
+5. **The underwriting evidence is live or absent**, never sample data: on
+   the local chain too, a provider without its key is "not configured" and
+   Raise your limit says which key it needs. Record the underwriting scenes
+   with the keys set, or show that message as it is.
 6. **Local currency is indicative**, as the line itself says.
 7. **The buyer's scenes use the buyer's words**: account, Face ID, confirm,
    dollars. Monad, Chainlink and CRE are named only in captions and in the

@@ -37,6 +37,9 @@ import { evidenceStaleness, linkMessage, underwriteConsentMessage } from "./mess
  * 4. The workflow writes the facts through the forwarder; ScoreManager
  *    scores them. Its signed callback (`/api/cre/callback`) records the
  *    outcome, and `creditStatus` shows it with the line read from the chain.
+ *    When the review needs a data provider the workflow has no key for
+ *    (`credit.unavailable`), nothing is decided: the request fails with
+ *    `unavailableMessage`, naming the provider and the key it needs.
  *
  * Under simulation the trigger is `cre workflow simulate ./underwriting
  * --listen` (http://localhost:2000/trigger, body `{ "input": payload }`).
@@ -331,6 +334,43 @@ export async function creditStatus(account: Address) {
         }
       : null,
   };
+}
+
+/** The data providers a review can need, and the variable each is configured with (in workflows/.env, or the CRE secrets). */
+const REVIEW_PROVIDERS: Record<string, { name: string; env: string }> = {
+  nansen: { name: "Nansen", env: "NANSEN_API_KEY" },
+  zerion: { name: "Zerion", env: "ZERION_API_KEY" },
+  etherscan: { name: "Etherscan", env: "ETHERSCAN_API_KEY" },
+};
+
+const listOf = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
+/**
+ * What "Raise your limit" says when a review can't run here: the providers it
+ * needs that have no key on this deployment, by name and by key.
+ *
+ *   "This review needs Nansen, which isn't set up on this server yet (NANSEN_API_KEY). Pay now still works."
+ */
+export function unavailableMessage(providers: readonly string[]): string {
+  const known = [...new Set(providers)].filter((p) => p in REVIEW_PROVIDERS).map((p) => REVIEW_PROVIDERS[p]!);
+  if (known.length === 0) return "Credit reviews aren't fully set up on this server yet. Pay now still works.";
+  const verb = known.length === 1 ? "isn't" : "aren't";
+  return `This review needs ${listOf(known.map((k) => k.name))}, which ${verb} set up on this server yet (${listOf(known.map((k) => k.env))}). Pay now still works.`;
+}
+
+/**
+ * The workflow could not review an account for want of provider keys: close
+ * its open requests as failed with `unavailableMessage`. No decision is
+ * recorded (none was made), so the buyer can ask again once the key is set.
+ */
+export async function recordUnavailable(input: { user: Address; providers: readonly string[] }): Promise<void> {
+  const db = getDb();
+  const at = new Date().toISOString();
+  const error = unavailableMessage(input.providers);
+  const open = await db.underwritingRequests.find({ account: input.user.toLowerCase(), state: { in: ["queued", "sent"] } });
+  for (const r of open) {
+    await db.underwritingRequests.update(r.id, (x) => ({ ...x, state: "failed", doneAt: at, error }));
+  }
 }
 
 /** Record the workflow's decision for an account, and close its request. */

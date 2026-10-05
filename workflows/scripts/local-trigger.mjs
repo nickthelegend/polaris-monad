@@ -13,11 +13,14 @@
  * CRE SDK's test runtime with Bun:
  *
  * - the account's consent and the history wallet's proof are verified;
- * - the facts are derived by @polarispay/underwriting from its synthesized
- *   provider fixtures: the account gets the "fresh-account" persona's
- *   history and the linked wallet the "strong" one's (no keys, no network,
- *   and the run's log says so);
- * - the report goes through the local chain's MockKeystoneForwarder, and
+ * - the facts are derived by @polarispay/underwriting from the providers
+ *   themselves, live: Nansen, Zerion and Etherscan with the keys below, and
+ *   the public RPCs. A provider without its key is not configured: it is never
+ *   called, what only it reads is absent (no points), and when that leaves
+ *   nothing to attest the workflow says "unavailable" and its callback names
+ *   the missing key. Nothing answers in a provider's place, so a fresh local
+ *   account is underwritten as what it is: new;
+ * - a report goes through the local chain's MockKeystoneForwarder, and
  *   ScoreManager scores it and opens the line on chain;
  * - the workflow's signed callback is posted to the API.
  *
@@ -27,19 +30,21 @@
  *   POLARIS_LOCAL_TRIGGER_PORT    default 2000
  *   POLARIS_CALLBACK_URL          where the callback goes (e.g. http://localhost:3100/api/cre/callback)
  *   POLARIS_CALLBACK_SECRET       its HMAC secret (= the API's POLARIS_CRE_CALLBACK_SECRET)
- *   POLARIS_LOCAL_ACCOUNT_PERSONA / POLARIS_LOCAL_HISTORY_PERSONA
- *                                 fixture personas (default fresh-account / strong)
+ *   NANSEN_API_KEY, ZERION_API_KEY, ETHERSCAN_API_KEY
+ *                                 the providers' keys, from the environment or workflows/.env;
+ *                                 each one unset is reported as not configured (never printed)
  *
  * Local chains only: it refuses an RPC that isn't on loopback, and it holds
- * no key (the node's unlocked deployer account delivers the report, as the
- * CRE simulator's transmitter key would).
+ * no chain key (the node's unlocked deployer account delivers the report, as
+ * the CRE simulator's transmitter key would). The provider calls are reads.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 import { runBun } from "./bun.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -50,14 +55,22 @@ const PORT = Number(process.env.POLARIS_LOCAL_TRIGGER_PORT || 2000);
 const CALLBACK_URL = process.env.POLARIS_CALLBACK_URL || "";
 const CALLBACK_SECRET = process.env.POLARIS_CALLBACK_SECRET || "";
 
-const PERSONAS = JSON.parse(readFileSync(join(REPO, "packages", "underwriting", "fixtures", "personas.json"), "utf8"));
-function persona(kind, name) {
-  const found = PERSONAS[kind].find((p) => p.persona === name);
-  if (!found) throw new Error(`No ${kind} persona "${name}" in packages/underwriting/fixtures/personas.json`);
-  return found.address;
+/** The providers' keys: the environment first, then workflows/.env. Values stay in memory and the child's environment. */
+const PROVIDER_KEY_NAMES = ["NANSEN_API_KEY", "ZERION_API_KEY", "ETHERSCAN_API_KEY"];
+function providerKeys(env = process.env, file = join(ROOT, ".env")) {
+  const fromFile = existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {};
+  const out = {};
+  for (const name of PROVIDER_KEY_NAMES) {
+    const v = (env[name] || fromFile[name] || "").trim();
+    if (v) out[name] = v;
+  }
+  return out;
 }
-const ACCOUNT_PERSONA = process.env.POLARIS_LOCAL_ACCOUNT_PERSONA || "fresh-account";
-const HISTORY_PERSONA = process.env.POLARIS_LOCAL_HISTORY_PERSONA || "strong";
+/** "nansen: not configured (NANSEN_API_KEY), zerion: live, …": names only, never values. */
+function describeProviders(keys) {
+  return PROVIDER_KEY_NAMES.map((n) => `${n.split("_")[0].toLowerCase()}: ${keys[n] ? "live" : `not configured (${n})`}`).join(", ");
+}
+const KEYS = providerKeys();
 
 const host = new URL(RPC).hostname;
 if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(host)) {
@@ -78,13 +91,15 @@ function runOnce(input) {
       rpc: RPC,
       deploymentFile: DEPLOYMENT,
       callback: CALLBACK_URL ? { url: CALLBACK_URL, secret: CALLBACK_SECRET } : null,
-      personas: { account: persona("accounts", ACCOUNT_PERSONA), history: persona("linked", HISTORY_PERSONA) },
       input,
     }),
   );
   try {
+    // Only the keys found are passed; one left out is not configured in the run.
+    const env = { ...process.env, LOCAL_TRIGGER_IN: inFile, LOCAL_TRIGGER_OUT: outFile };
+    for (const name of PROVIDER_KEY_NAMES) delete env[name];
     const r = runBun(["--conditions=source", "test", "--timeout", "120000", "./local/underwrite.run.ts"], {
-      env: { ...process.env, LOCAL_TRIGGER_IN: inFile, LOCAL_TRIGGER_OUT: outFile },
+      env: { ...env, ...KEYS },
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf8",
     });
@@ -145,12 +160,13 @@ const server = createServer((req, res) => {
     // Accepted now and run in order: the API's call to the trigger has a short timeout.
     res.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({ accepted: true }));
     queue = queue.then(async () => {
-      log(`underwriting ${input.user}${input.linked?.wallet ? ` with history ${input.linked.wallet}` : ""} (fixture evidence: ${ACCOUNT_PERSONA} + ${HISTORY_PERSONA})`);
+      log(`underwriting ${input.user}${input.linked?.wallet ? ` with history ${input.linked.wallet}` : ""} (${describeProviders(KEYS)})`);
       try {
         const out = runOnce(input);
         const r = out.result;
         const score = r.onChainScore !== null && r.onChainScore !== undefined ? ` (score ${r.onChainScore})` : "";
         log(`-> ${r.status}${score}${r.reason ? `: ${r.reason}` : ""}${r.txHash ? ` tx ${r.txHash}` : ""}`);
+        if (r.notConfigured?.length) log(`   not configured: ${r.notConfigured.join(", ")}; absent: ${r.absent?.join(", ") || "nothing"}`);
         await deliver(out.callbacks);
       } catch (error) {
         log(`run failed: ${error.message}`);
@@ -160,6 +176,6 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  log(`listening on http://127.0.0.1:${PORT}/trigger (chain ${RPC}, fixture personas ${ACCOUNT_PERSONA} + ${HISTORY_PERSONA})`);
+  log(`listening on http://127.0.0.1:${PORT}/trigger (chain ${RPC}; providers live with their keys: ${describeProviders(KEYS)})`);
   if (!CALLBACK_URL) log("POLARIS_CALLBACK_URL is not set: decisions reach the chain, but the API won't hear about them");
 });

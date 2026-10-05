@@ -10,7 +10,7 @@ import { createUnderwritingClient, poweredBy, UnderwritingApiError } from "../sr
 import { encodeUnderwritingReport } from "../src/core/abi.ts";
 import { linkMessage } from "../src/core/link.ts";
 import type { Address, Facts } from "../src/core/types.ts";
-import { fixtureTransport } from "../src/node/fixtures.ts";
+import { fixtureTransport } from "../src/testing/fixtures.ts";
 import { createFetchHandler, type HandlerOptions } from "../src/node/handler.ts";
 import type { HttpTransport } from "../src/node/http.ts";
 import { NansenClient } from "../src/node/nansen.ts";
@@ -27,7 +27,7 @@ function underwriter(): Underwriter {
   const inner = fixtureTransport();
   const t: HttpTransport = (req, signal) => inner({ ...req, url: alias(req.url), body: req.body && alias(req.body) }, signal);
   const p = fixtureProviders(t);
-  p.nansen = new NansenClient({ mode: "fixture", transport: t, clock: p.clock, cacheTtlMs: 0 });
+  p.nansen = new NansenClient({ apiKey: "test-nansen-key", transport: t, clock: p.clock, cacheTtlMs: 0 });
   return new Underwriter({ providers: p, now: () => NOW });
 }
 
@@ -69,7 +69,8 @@ describe("the underwriting client", () => {
     assert.equal(a.decision.limit, "1000000000");
     assert.equal(a.decision.payIn4.allowed, true);
     assert.equal(a.decision.payIn4.quote?.principal, "600000000");
-    assert.equal(a.dataMode, "fixture");
+    assert.deepEqual(a.providers, { nansen: "live", zerion: "live", etherscan: "live", rpc: "live" });
+    assert.deepEqual(a.notConfigured, []);
 
     const nansen = poweredBy(a.decision.reasons).find((c) => c.provider === "nansen");
     assert.equal(nansen?.name, "Nansen");

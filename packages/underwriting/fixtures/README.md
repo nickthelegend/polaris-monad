@@ -1,5 +1,12 @@
 # Fixtures
 
+**Test doubles, for the tests only.** No product path reads these files: a
+provider without its key is "not configured" and nothing answers in its place
+(see the package README, "Missing keys"). The transport that serves them is
+`@polarispay/underwriting/testing`, and
+[`test/no-fixtures-in-product.test.ts`](../test/no-fixtures-in-product.test.ts)
+fails if the gateway, the API, the app or the CRE workflow ever reaches them.
+
 **Everything in this directory is synthesized, not recorded.** No Nansen,
 Zerion or Etherscan key existed when the underwriting package was built, so
 these files were written by
@@ -25,8 +32,7 @@ documented response schema (see [`docs/research/data.md`](../../../docs/research
 ```
 
 The addresses are synthetic (long runs of zeros), so no real person's wallet
-is described. The API responses carry `x-polaris-fixture: true`, and the
-service reports `dataMode: "fixture"` whenever any answer came from here.
+is described. Answers from here carry `x-polaris-fixture: true`.
 
 ## Layout
 
@@ -42,7 +48,7 @@ The fixture transport applies the same filters the APIs do (Zerion's
 `max_mined_at` probes, chain and operation filters, `page[size]` and cursors;
 Nansen's date ranges, `source_type` and `per_page`; Etherscan's `sort` and
 `offset`), so a file answers a probe for any "now". A request with no file is
-a failure (`fixture_missing`), never an empty answer.
+a failure (`not_found`, "no fixture recorded"), never an empty answer.
 
 ## Personas
 

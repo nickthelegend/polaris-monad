@@ -36,6 +36,12 @@
  * | funder         | rule: none (gasless)                   | Nansen first-funder                                       |
  * | relatedWallets | rule: none                             | Nansen related-wallets on the funder                      |
  * | riskLabel      | rule: none                             | Nansen funder label (+ labels endpoint when enabled)      |
+ *
+ * A provider without its key is not configured: the driver answers each of
+ * its requests with a `not_configured` reply (`notConfiguredReply`) without
+ * sending anything, the next source in the row is asked, and a field no
+ * configured source could read is `not_configured`, not `missing` (facts.ts
+ * says what that costs). Nothing ever answers in a provider's place.
  */
 
 import {
@@ -45,6 +51,7 @@ import {
   MONAD_TESTNET,
   NANSEN_RELATED_CHAINS,
   PROBE_EDGES_DAYS,
+  PROVIDER_KEYS,
 } from "./constants.ts";
 import { accountRules, evidence } from "./evidence.ts";
 import { exchangeIn, firstRisk, riskIn } from "./labels.ts";
@@ -61,12 +68,41 @@ import {
 } from "./providers/nansen.ts";
 import { parseRpcQuantity, rpcRequests } from "./providers/rpc.ts";
 import { countedRows, isNotTrackable, parsePositionsStables, parseTransactions, zerionRequests } from "./providers/zerion.ts";
-import type { Address, Evidence, Funder, SubjectEvidence } from "./types.ts";
+import type { Address, Evidence, Funder, KeyedProvider, SubjectEvidence } from "./types.ts";
 
 /** What the driver hands back for each request. */
 export type Reply =
   | { ok: true; status: number; body: unknown; headers?: Record<string, string> }
   | { ok: false; code: string; retryable: boolean; retryAfterMs: number | null; message: string };
+
+/** The reply code for a request to a provider that has no key here. */
+export const NOT_CONFIGURED = "not_configured";
+
+/**
+ * What a driver answers, without sending anything, for a request to a keyed
+ * provider whose key is not set: not retryable, and it names the variable.
+ */
+export function notConfiguredReply(spec: RequestSpec): Extract<Reply, { ok: false }> {
+  const env = spec.provider === "rpc" ? null : PROVIDER_KEYS[spec.provider];
+  return {
+    ok: false,
+    code: NOT_CONFIGURED,
+    retryable: false,
+    retryAfterMs: null,
+    message: `${spec.provider}.${spec.endpoint}: ${spec.provider} is not configured${env ? ` (${env} is not set)` : ""}`,
+  };
+}
+
+/** The keyed providers behind `not_configured` issues, each once, in order. */
+export function notConfiguredProviders(issues: ReadonlyArray<Pick<Issue, "source" | "code">>): KeyedProvider[] {
+  const out: KeyedProvider[] = [];
+  for (const i of issues) {
+    if (i.code !== NOT_CONFIGURED) continue;
+    const p = i.source.split(".")[0];
+    if ((p === "nansen" || p === "zerion" || p === "etherscan") && !out.includes(p)) out.push(p);
+  }
+  return out;
+}
 
 /** A source that did not answer. Non-secret; safe to return to the caller. */
 export interface Issue {
@@ -207,6 +243,23 @@ function* nothing<T>(value: T): Recipe<T> {
   return value;
 }
 
+type Failed = { ok: false; issue: Omit<Issue, "subject"> };
+
+/**
+ * Evidence no source could read: `not_configured` when every source tried was
+ * a provider with no key (asking again cannot help), else `missing`.
+ */
+function lost<T>(value: T, source: string, detail: string, failures: ReadonlyArray<Failed | null | undefined>): Evidence<T> {
+  const tried = failures.filter((f): f is Failed => !!f);
+  if (tried.length > 0 && tried.every((f) => f.issue.code === NOT_CONFIGURED)) {
+    const names = [...new Set(tried.map((f) => f.issue.source.split(".")[0]))];
+    return evidence.notConfigured(value, source, `${names.join(" and ")} not configured`);
+  }
+  return evidence.missing(value, source, detail);
+}
+
+const failure = <T>(g: Got<T>): Failed | null => (g.ok ? null : g);
+
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 const safe = (n: bigint) => Number(n > MAX_SAFE ? MAX_SAFE : n);
 
@@ -268,6 +321,7 @@ export function* accountRecipe(address: Address, o: RecipeOptions): Recipe<Colle
   function* activity(): Recipe<Pick<SubjectEvidence, "firstSeenAt" | "sentCount">> {
     const spec = zerionRequests.transactions(address, { testnet: true, chainIds: [chain], pageSize: 100, trash: "only_non_trash" });
     const z = yield* askZerion(spec, parseTransactions);
+    let zerionFailed: Failed | null = failure(z);
     if (z.ok && z.value === "not-trackable") {
       return {
         firstSeenAt: evidence.empty<number | null>(null, "zerion.transactions", "not trackable"),
@@ -292,6 +346,7 @@ export function* accountRecipe(address: Address, o: RecipeOptions): Recipe<Colle
         };
       }
       note(p);
+      zerionFailed = failure(p);
     } else if (!z.ok) note(z);
 
     // Fallback: Etherscan V2 token transfers on Monad testnet.
@@ -305,10 +360,10 @@ export function* accountRecipe(address: Address, o: RecipeOptions): Recipe<Colle
     return {
       firstSeenAt: a.ok
         ? evidence.fallback(a.value.firstAt, "etherscan.tokentx", "zerion unavailable")
-        : evidence.missing<number | null>(null, "etherscan.tokentx", "zerion and etherscan unavailable"),
+        : lost<number | null>(null, "etherscan.tokentx", "zerion and etherscan unavailable", [zerionFailed, failure(a)]),
       sentCount: b.ok
         ? evidence.fallback(b.value.count, "etherscan.tokentx", "zerion unavailable")
-        : evidence.missing(0, "etherscan.tokentx", "zerion and etherscan unavailable"),
+        : lost(0, "etherscan.tokentx", "zerion and etherscan unavailable", [zerionFailed, failure(b)]),
     };
   }
 
@@ -333,12 +388,12 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
     const specs = rpcUrls.map((url) => rpcRequests.transactionCount(url, address));
     const replies = specs.length ? yield specs : [];
     let total = 0n;
-    let failed = false;
+    let failed: Failed | null = null;
     for (const [i, spec] of specs.entries()) {
       const g = read(spec, replies[i], parseRpcQuantity);
       if (!g.ok) {
         note(g);
-        failed = true;
+        failed = g;
         break;
       }
       total += g.value;
@@ -351,7 +406,7 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
       return evidence.fallback(z.value.hasNext ? Math.max(rows.length, 100) : rows.length, "zerion.transactions", "nonces unavailable; capped at 100");
     }
     note(z);
-    return evidence.missing(0, "rpc.nonce", "nonces and zerion unavailable");
+    return lost(0, "rpc.nonce", "nonces and zerion unavailable", [failed, failure(z)]);
   }
 
   function* balance(): Recipe<Evidence<number>> {
@@ -362,7 +417,7 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
     if (n.ok) return evidence.fallback(n.value, "nansen.current-balance", z.ok ? "zerion: not trackable" : "zerion unavailable");
     note(n);
     if (z.ok) return evidence.empty(0, "zerion.positions", "not trackable");
-    return evidence.missing(0, "zerion.positions", "zerion and nansen unavailable");
+    return lost(0, "zerion.positions", "zerion and nansen unavailable", [failure(z), failure(n)]);
   }
 
   function* defi(): Recipe<Evidence<number | null>> {
@@ -374,7 +429,7 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
     if (n.ok) return evidence.fallback(n.value, "nansen.transactions", "zerion unavailable; last year only");
     note(n);
     if (z.ok) return evidence.empty<number | null>(null, "zerion.probe", "not trackable");
-    return evidence.missing<number | null>(null, "zerion.probe", "zerion and nansen unavailable");
+    return lost<number | null>(null, "zerion.probe", "zerion and nansen unavailable", [failure(z), failure(n)]);
   }
 
   function* liquidations(): Recipe<Evidence<number>> {
@@ -387,7 +442,7 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
       // No fallback: neither Nansen nor Zerion exposes liquidations, and a zero here would hide a risk.
       if (!g.ok) {
         note(g);
-        return evidence.missing(0, "etherscan.logs", "etherscan unavailable");
+        return lost(0, "etherscan.logs", "etherscan unavailable", [g]);
       }
       total += g.value;
     }
@@ -407,13 +462,17 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
       : evidence.empty<Funder | null>(null, "nansen.first-funder", "no first-funder attribution");
   } else {
     note(funderGot);
-    funder = evidence.missing<Funder | null>(null, "nansen.first-funder", "nansen unavailable");
+    funder = lost<Funder | null>(null, "nansen.first-funder", "nansen unavailable", [funderGot]);
   }
-  const f = funder.status === "missing" ? null : funder.value;
+  const funderUnread = funder.status === "missing" || funder.status === "not_configured";
+  const f = funderUnread ? null : funder.value;
+  /** What depends on the funder inherits why it could not be read. */
+  const noFunder = <T>(value: T, source: string, detail: string): Evidence<T> =>
+    funder.status === "not_configured" ? evidence.notConfigured(value, source, funder.detail) : evidence.missing(value, source, detail);
 
   function* age(): Recipe<Evidence<number | null>> {
     if (f && f.fundedAt !== null) return evidence.ok<number | null>(f.fundedAt, "nansen.first-funder");
-    const why = funder.status === "missing" ? "nansen unavailable" : "no first-funder attribution";
+    const why = funder.status === "missing" ? "nansen unavailable" : funder.status === "not_configured" ? "nansen not configured" : "no first-funder attribution";
     const z = yield* probeSince(address, now, edges, {});
     if (z.ok) {
       return z.value.notTrackable
@@ -421,28 +480,28 @@ export function* linkedRecipe(address: Address, o: RecipeOptions): Recipe<Collec
         : evidence.fallback(z.value.since, "zerion.probe", why);
     }
     note(z);
-    return evidence.missing<number | null>(null, "zerion.probe", `${why}; zerion unavailable`);
+    return lost<number | null>(null, "zerion.probe", `${why}; zerion unavailable`, [failure(funderGot), failure(z)]);
   }
 
   function* related(): Recipe<Evidence<number>> {
-    if (funder.status === "missing") return evidence.missing(0, "nansen.related-wallets", "first funder unknown");
+    if (funderUnread) return noFunder(0, "nansen.related-wallets", "first funder unknown");
     if (!f) return evidence.empty(0, "nansen.related-wallets", "no funder, so no cluster by funder");
     if (exchangeIn(f.name) || riskIn(f.name)) return evidence.ok(0, "nansen.first-funder");
     if (!NANSEN_RELATED_CHAINS.has(f.chain)) return evidence.empty(0, "nansen.related-wallets", `chain ${f.chain} not supported`);
     const r = yield* ask(nansenRequests.relatedWallets(f.address, f.chain), (b) => parseRelatedWallets(b, [f.address, address]));
     if (r.ok) return evidence.ok(r.value.count, "nansen.related-wallets");
     note(r);
-    return evidence.missing(0, "nansen.related-wallets", "nansen unavailable");
+    return lost(0, "nansen.related-wallets", "nansen unavailable", [failure(r)]);
   }
 
   const [firstSeenAt, relatedWallets] = yield* all<[Evidence<number | null>, Evidence<number>]>([age(), related()]);
 
   let riskLabel: Evidence<string | null>;
-  if (funder.status === "missing") riskLabel = evidence.missing<string | null>(null, "nansen.first-funder", "first funder unknown");
+  if (funderUnread) riskLabel = noFunder<string | null>(null, "nansen.first-funder", "first funder unknown");
   else if (riskIn(f?.name)) riskLabel = evidence.ok<string | null>(riskIn(f?.name), "nansen.first-funder");
   else if (labelsGot && !labelsGot.ok) {
     note(labelsGot);
-    riskLabel = evidence.missing<string | null>(null, "nansen.labels", "labels unavailable");
+    riskLabel = lost<string | null>(null, "nansen.labels", "labels unavailable", [failure(labelsGot)]);
   } else if (labelsGot?.ok) riskLabel = evidence.ok(firstRisk(labelsGot.value.map((x) => x.label)), "nansen.labels");
   else riskLabel = evidence.ok<string | null>(null, "nansen.first-funder");
 

@@ -39,6 +39,17 @@ export interface Facts {
 /** The data providers, for provenance and for "from Nansen" badges. */
 export type Provider = "nansen" | "zerion" | "etherscan" | "rpc" | "polaris";
 
+/** The providers that need an API key. Public RPCs need none. */
+export type KeyedProvider = "nansen" | "zerion" | "etherscan";
+
+/**
+ * How a provider runs on this deployment: `live` (it has its key, or needs
+ * none), or `not_configured` (no key: it is never called, and nothing stands
+ * in for it). There is no third mode: no fixture or sample data ever answers
+ * for a provider outside the tests.
+ */
+export type ProviderMode = "live" | "not_configured";
+
 /**
  * How a piece of evidence was obtained.
  *
@@ -46,20 +57,19 @@ export type Provider = "nansen" | "zerion" | "etherscan" | "rpc" | "polaris";
  * - `fallback`: the primary source failed or had nothing, and a fallback answered.
  * - `empty`: a source answered and there is genuinely nothing (a known empty,
  *   such as Nansen finding no first funder, or Zerion "not trackable").
- * - `missing`: every source failed. Missing is never attested as zero.
+ * - `missing`: a source failed. Missing is never attested as zero, and asking
+ *   again may help.
+ * - `not_configured`: no source could be asked, because every provider that
+ *   reads this field has no key on this deployment. Never attested as a value
+ *   either; asking again does not help until the key is set (facts.ts).
  */
-export type EvidenceStatus = "ok" | "fallback" | "empty" | "missing";
-
-/** Where the bytes came from: a live API, or a fixture file. */
-export type DataMode = "live" | "fixture";
+export type EvidenceStatus = "ok" | "fallback" | "empty" | "missing" | "not_configured";
 
 export interface Evidence<T> {
   value: T;
   status: EvidenceStatus;
   /** `<provider>.<endpoint>`, e.g. `nansen.first-funder`. */
   source: string;
-  /** Set by the Node collectors; the CRE workflow is always live. */
-  mode?: DataMode;
   /** A short, non-secret note on why a fallback or a miss happened. */
   detail?: string;
 }

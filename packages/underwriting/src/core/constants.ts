@@ -9,7 +9,18 @@
  * holds this package to the contract directly.
  */
 
-import type { Address } from "./types.ts";
+import type { Address, KeyedProvider } from "./types.ts";
+
+/**
+ * The environment variable (and CRE secret id) that holds each keyed
+ * provider's API key. A provider without its key is not configured: it is
+ * never called, and the evidence it would read is absent (facts.ts).
+ */
+export const PROVIDER_KEYS: Readonly<Record<KeyedProvider, string>> = {
+  nansen: "NANSEN_API_KEY",
+  zerion: "ZERION_API_KEY",
+  etherscan: "ETHERSCAN_API_KEY",
+};
 
 /** Bumped whenever the Facts derivation rules change. See facts.ts. */
 export const FACTS_VERSION = 1;

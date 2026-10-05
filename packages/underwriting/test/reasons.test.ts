@@ -145,6 +145,20 @@ describe("reasons in the buyer's words", () => {
     }
   });
 
+  it("what a missing key leaves out is said in the buyer's words too, and in the merchant's", () => {
+    const facts = f({ walletAgeDays: 120, txCount: 12 });
+    const lines = explainFacts(facts, scoreBreakdown(facts), {
+      linked: { address: "0xb0b0000000000000000000000000000000000001", used: false, excludedFor: "missing-risk-check", riskLabel: null },
+      missing: ["linked.funder"],
+      absent: ["linked.funder", "account.firstSeenAt"],
+    });
+    const texts = lines.map((l) => l.text);
+    assert.ok(texts.includes("We can't check your linked account here yet, so it doesn't count"), texts.join(" | "));
+    assert.ok(texts.includes("Some of this account's history can't be read here yet, so it doesn't count"), texts.join(" | "));
+    for (const t of texts) assert.doesNotMatch(t, JARGON, t);
+    assert.equal(merchantVoice("We can't check your linked account here yet, so it doesn't count"), "We can't check the buyer's linked account here yet, so it doesn't count");
+  });
+
   it("credits the data providers a decision stands on, for a 'from Nansen' badge, never Polaris's own rules", () => {
     const facts = f({ walletAgeDays: 1210, txCount: 902, exchangeFunded: true, relatedWallets: 8 });
     const lines = explainFacts(facts, scoreBreakdown(facts), {
@@ -176,7 +190,7 @@ describe("reasons in the buyer's words", () => {
     ];
     const gapSets = [gaps(0, 0), gaps(89, 9), gaps(3, 2), [gaps(1, 1)[0]!], [gaps(1, 1)[1]!]];
     for (const thinFile of gapSets) {
-      for (const pending of [null, "checks", "ownership"] as const) {
+      for (const pending of [null, "checks", "ownership", "unavailable"] as const) {
         for (const purchase of [null, 200_000_000n]) {
           for (const collateralBoost of [0n, 300_000_000n]) {
             const d = decide({ score: 520, declined: false, thinFile, pending, purchase, collateralBoost, hasLinked: pending === "ownership" });

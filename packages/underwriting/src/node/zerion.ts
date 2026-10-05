@@ -1,7 +1,8 @@
 /**
  * The Zerion client: Nansen's documented fallback, and the exact source for
  * balances and for savings-and-trading tenure. `ZERION_API_KEY` makes it
- * live; without it, it reads fixtures.
+ * live; without it, it is not configured and every call fails with
+ * `not_configured`.
  *
  * "Not trackable" (a 400 for exchange hot wallets, routers, token contracts)
  * is returned as a known empty, not thrown: Zerion is telling us there is no
@@ -26,7 +27,7 @@ import { jsonBody, ProviderError, statusError, type HttpRequest } from "./http.t
 export class ZerionClient extends ProviderClient {
   constructor(opts: ClientOptions = {}) {
     // Developer plan: 3 requests a second.
-    super(opts, { minIntervalMs: 340 });
+    super(opts, { minIntervalMs: 340, provider: "zerion" });
   }
 
   protected authorize(req: HttpRequest): HttpRequest {
