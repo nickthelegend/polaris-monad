@@ -1,9 +1,8 @@
 import { type Address, getAddress, type Hex, isAddress, stringToHex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { authorize } from "./account";
-import { ApiError, api, apiConfigured } from "./api";
+import { ApiError, api, apiConfigured, NOT_CONFIGURED_MESSAGE } from "./api";
 import { env } from "./env";
-import { mockLedger } from "./data/mock";
 import { notifyDataChanged } from "./data/changes";
 
 /**
@@ -16,10 +15,7 @@ import { notifyDataChanged } from "./data/changes";
  * HTTP trigger, and the DON checks them again before it reads Nansen and
  * the chain and writes the facts to ScoreManager. The texts come from the
  * API (`/api/public/credit/{account}/messages`), which serves exactly what
- * the workflow verifies.
- *
- * Without the API (the offline demo) this is the sample ledger's stand-in,
- * and says so: nothing is underwritten.
+ * the workflow verifies. Without the API nothing is asked for or signed.
  */
 
 type Messages = { account: Address; wallet: Address | null; issuedAt: number; nonce: string; consent: string; link: string | null };
@@ -82,6 +78,7 @@ async function waitForDecision(account: Address, timeoutMs: number): Promise<Cre
  * while it is still being reviewed (the credit screen keeps polling).
  */
 export async function requestCredit(opts: { withHistory?: boolean; waitMs?: number } = {}): Promise<CreditRequestResult> {
+  if (!apiConfigured()) throw new ApiError(0, "not_configured", NOT_CONFIGURED_MESSAGE);
   // Face ID first, inside the tap: WebKit wants the passkey call to start in the user gesture.
   const account = await authorize();
   const history = opts.withHistory ? await connectHistoryWallet() : null;
@@ -107,12 +104,6 @@ export async function requestCredit(opts: { withHistory?: boolean; waitMs?: numb
  * still running (the credit screens update when it lands).
  */
 export async function bringHistory(): Promise<"applied" | "pending"> {
-  if (!apiConfigured()) {
-    // Offline demo: the sample ledger pretends a review happened. Nothing is underwritten.
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    mockLedger.linkHistory();
-    return "applied";
-  }
   try {
     const { decision } = await requestCredit({ withHistory: true });
     if (!decision) return "pending";

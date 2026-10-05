@@ -1,12 +1,10 @@
-import { type Address, type Hex, isHex, type TypedDataDomain } from "viem";
-import { ApiError, api, apiConfigured } from "./api";
+import type { Address, Hex, TypedDataDomain } from "viem";
+import { ApiError, api } from "./api";
 import { receiptUrl } from "./chain";
 import { notifyDataChanged } from "./data/changes";
-import { mockLedger } from "./data/mock";
 import type { PaymentLink, Person } from "./data/types";
 import type { Micros } from "./money";
 import type { Authorization, Cancel, CancelSubscription, Claim, CloseSplit, CreateSplit, Open, Permit, PlanIntent, RepayIntent, SubscribeIntent } from "./sign";
-import type { SplitMemo } from "./split";
 
 /**
  * The relayer carries signatures to the chain (plan §5.3). The app signs; the
@@ -17,9 +15,9 @@ import type { SplitMemo } from "./split";
  * With `NEXT_PUBLIC_POLARIS_API_URL` set, every request goes to
  * `POST {api}/api/relay` (apps/business/src/server/relayer/relay.ts has the
  * request shapes) and "Paid" comes from the transaction's own events, which
- * the server reads from the receipt. Without it, a local stub checks shapes,
- * waits about as long as Monad takes to finalise, and writes to the sample
- * ledger, so the app still works as a demo offline.
+ * the server reads from the receipt. There is no other relayer: a build
+ * without the API refuses before anything is signed (`domains.ts`), and a
+ * request that got here anyway fails with "not configured".
  */
 
 export type Signed<T> = { message: T; signature: Hex; domain: TypedDataDomain };
@@ -31,11 +29,9 @@ export type RelayReceipt = {
   finalizedAt: number;
   /**
    * The explorer page; the only way the buyer ever reaches it is "View
-   * receipt". Null for the offline demo's stub, whose hash is made up.
+   * receipt". Null on a local chain, which has no explorer.
    */
   explorerUrl: string | null;
-  /** True when nothing reached a chain: the offline demo's stub relayer. */
-  simulated?: boolean;
   /** From the transaction's events, when the relayer saw them. */
   paymentId?: string;
   planId?: string;
@@ -95,11 +91,10 @@ export type PayEarlyRequest = { planId: string; loanId: bigint; borrower: Addres
 export type ReauthorizeRequest = { buyer: Address; permit: Signed<Permit> };
 
 /**
- * PolarisSplit.createSplit: the organiser's CreateSplit. `memo` is for the
- * offline stub's sample book only: the real relayer never sends the split's
- * words (only their hash, inside `creation`).
+ * PolarisSplit.createSplit: the organiser's CreateSplit. The split's words
+ * never go to the relayer, only their hash (inside `creation`).
  */
-export type CreateSplitRequest = { creation: Signed<CreateSplit>; splitId: Hex; memo: SplitMemo };
+export type CreateSplitRequest = { creation: Signed<CreateSplit> };
 
 /** PolarisSplit.payShare: a friend's ERC-3009 authorisation for exactly their share. */
 export type PayShareRequest = { splitId: Hex; index: number; payer: Address; authorization: Signed<Authorization> };
@@ -108,8 +103,6 @@ export type PayShareRequest = { splitId: Hex; index: number; payer: Address; aut
 export type CloseSplitRequest = { close: Signed<CloseSplit> };
 
 export interface Relayer {
-  /** "http": Polaris for Business's relayer; "stub": the offline demo's. */
-  readonly kind: "http" | "stub";
   createSplit(request: CreateSplitRequest): Promise<RelayReceipt>;
   payShare(request: PayShareRequest): Promise<RelayReceipt>;
   closeSplit(request: CloseSplitRequest): Promise<RelayReceipt>;
@@ -137,9 +130,6 @@ export class RelayError extends Error {
     this.code = code;
   }
 }
-
-/** True while the relayer is the local stub (no Polaris API configured). */
-export const RELAYER_IS_STUB = !apiConfigured();
 
 /* ── The real relayer: POST /api/relay ──────────────────────────────────── */
 
@@ -207,8 +197,8 @@ function permitBody(permit: Signed<Permit>) {
   return { value: str(permit.message.value), deadline: str(permit.message.deadline), signature: permit.signature };
 }
 
-const httpRelayer: Relayer = {
-  kind: "http",
+/** Polaris for Business's relayer, the only one. */
+export const relayer: Relayer = {
   createSplit: ({ creation }) =>
     relay({
       type: "createSplit",
@@ -312,113 +302,3 @@ const httpRelayer: Relayer = {
     }),
   reauthorize: ({ buyer, permit }) => relay({ type: "reauthorize", buyer, permit: permitBody(permit) }),
 };
-
-/* ── The stub: shapes only, sample ledger, no network ───────────────────── */
-
-const FINALITY_MS = 800;
-
-function assertSignature(signed: { signature: Hex }): void {
-  // 65 bytes: r ‖ s ‖ v.
-  if (!isHex(signed.signature) || signed.signature.length !== 132) {
-    throw new RelayError("invalid-signature", "That confirmation didn't go through. Try again.");
-  }
-}
-
-function fakeTxHash(): Hex {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
-}
-
-async function settle(effect: (txHash: Hex) => void): Promise<RelayReceipt> {
-  const submittedAt = Date.now();
-  await new Promise((resolve) => setTimeout(resolve, FINALITY_MS));
-  const txHash = fakeTxHash();
-  effect(txHash);
-  // A made-up hash: no explorer link, and marked as simulated for the screens to say so.
-  return { txHash, submittedAt, finalizedAt: Date.now(), explorerUrl: null, simulated: true };
-}
-
-function needBalance(amount: Micros): void {
-  if (mockLedger.balance() < amount) {
-    throw new RelayError("insufficient-funds", "Not enough dollars in your account for this.");
-  }
-}
-
-const stubRelayer: Relayer = {
-  kind: "stub",
-  async createSplit({ creation, splitId, memo }) {
-    assertSignature(creation);
-    return settle(() => mockLedger.createSplit(splitId, creation.message.amounts, Number(creation.message.expiresAt) * 1000, memo));
-  },
-  async payShare({ splitId, index, payer, authorization }) {
-    assertSignature(authorization);
-    needBalance(authorization.message.value);
-    const outcome = mockLedger.canPayShare(splitId, index);
-    if (outcome) throw new RelayError(outcome.reason, outcome.message);
-    return settle((tx) => mockLedger.payShare(splitId, index, payer, tx));
-  },
-  async closeSplit({ close }) {
-    assertSignature(close);
-    return settle(() => mockLedger.closeSplit(close.message.splitId));
-  },
-  async payNow({ link, authorization }) {
-    assertSignature(authorization);
-    needBalance(authorization.message.value);
-    return settle((tx) => mockLedger.payNow(link, tx));
-  },
-  async openPlan({ link, intent, permit }) {
-    assertSignature(intent);
-    assertSignature(permit);
-    const offer = link.modes.later;
-    if (!offer) throw new RelayError("over-limit", "This link doesn't offer Pay in 4.");
-    if (mockLedger.creditAvailable() < offer.total) {
-      throw new RelayError("over-limit", "This is more than your limit right now.");
-    }
-    // Nothing moves from the buyer at origination: the merchant is paid from the pool.
-    return settle((tx) => mockLedger.openPlan(link, tx));
-  },
-  async subscribe({ link, intent, permit }) {
-    assertSignature(intent);
-    assertSignature(permit);
-    needBalance(link.modes.subscription?.price ?? link.amount);
-    return settle((tx) => mockLedger.subscribe(link, tx));
-  },
-  async send({ linkKey, amount, senderName, expiresAt, authorization, open }) {
-    assertSignature(authorization);
-    assertSignature(open);
-    needBalance(amount);
-    return settle((tx) => mockLedger.send(linkKey, amount, senderName, Number(expiresAt) * 1000, tx));
-  },
-  async claim({ linkKey, claim, deadline, amount, senderName }) {
-    assertSignature(claim);
-    if (claim.message.deadline !== deadline) {
-      throw new RelayError("invalid-signature", "That claim didn't go through. Try again.");
-    }
-    return settle((tx) => mockLedger.claim(linkKey, amount, senderName, tx));
-  },
-  async cancelSend({ cancel }) {
-    assertSignature(cancel);
-    return settle((tx) => mockLedger.cancelSend(cancel.message.linkKey, tx));
-  },
-  async cancelSubscription({ cancel }) {
-    assertSignature(cancel);
-    return settle(() => mockLedger.cancelSubscription(cancel.message.subId));
-  },
-  async transfer({ to, authorization }) {
-    assertSignature(authorization);
-    needBalance(authorization.message.value);
-    return settle((tx) => mockLedger.transfer(to, authorization.message.value, tx));
-  },
-  async payEarly({ planId, repay }) {
-    assertSignature(repay);
-    return settle((tx) => mockLedger.payEarly(planId, tx));
-  },
-  // The offline demo never loses an approval (its plans have no collections), so nothing changes.
-  async reauthorize({ permit }) {
-    assertSignature(permit);
-    return settle(() => undefined);
-  },
-};
-
-export const relayer: Relayer = RELAYER_IS_STUB ? stubRelayer : httpRelayer;

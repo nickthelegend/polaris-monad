@@ -24,13 +24,13 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useAccounts } from "@/components/accounts";
 import { SignAgainNotice } from "@/components/sign-again";
 import { useOwner } from "@/lib/account/hooks";
-import { getActivity, getPlans, getProfile, SAMPLE_DATA } from "@/lib/data";
+import { getActivity, getPlans, getProfile } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { toNumber } from "@/lib/money";
 import { type HomeAccount, setPrefs } from "@/lib/prefs";
 import { balanceSeries, creditSeries, emptySeries, type Frame, FRAMES, restIndex, type Series } from "@/lib/series";
 import { useNow } from "@/lib/use-now";
-import { activityColumns, withSample } from "./bits";
+import { activityColumns } from "./bits";
 import { MoneyWidget } from "./money-widget";
 
 const ACCOUNTS: { value: HomeAccount; label: string; description: string }[] = [
@@ -92,9 +92,9 @@ function BalanceChart({ className }: { className?: string }) {
     if (!now) return null;
     if (account === "boost") return emptySeries(frame, now);
     if (account === "later") return credit && plans.value ? creditSeries(credit, plans.value.plans, frame, now) : null;
-    // A real account's line starts when it was opened (never a week it didn't exist); the sample book draws the whole frame.
-    if (!balance || !activity.value || (!SAMPLE_DATA && !profile.value)) return null;
-    return balanceSeries(toNumber(balance.available), activity.value, frame, now, SAMPLE_DATA ? undefined : (profile.value?.memberSince ?? null));
+    // The line starts when the account was opened: never a week it didn't exist.
+    if (!balance || !activity.value || !profile.value) return null;
+    return balanceSeries(toNumber(balance.available), activity.value, frame, now, profile.value.memberSince);
   }, [account, frame, now, balance, credit, activity.value, plans.value, profile.value]);
 
   const time = timeLabel(frame);
@@ -127,7 +127,6 @@ function BalanceChart({ className }: { className?: string }) {
               : `From ${dollars(series.start)} at the start of ${f.title}`
             : undefined
         }
-        badge={withSample()}
         valueTitle={`${what}, now`}
         right={<TimeframeChips options={["1h", "24h", "1w", "1m"] as const} value={frame} onValueChange={setFrame} aria-label="Timeframe" />}
       />

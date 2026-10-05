@@ -85,8 +85,8 @@ export function merchantReturnUrl(link: PaymentLink): string | null {
 /**
  * Back to the merchant after the receipt: close the popup (its opener
  * already has the result), or go to the session's success page. Returns
- * false when there is nowhere to go back to (a sample link, a dashboard
- * payment link, or a checkout opened directly), so the buyer stays in Polaris.
+ * false when there is nowhere to go back to (a dashboard payment link, or a
+ * checkout opened directly), so the buyer stays in Polaris.
  */
 export function returnToMerchant(link: PaymentLink): boolean {
   if (typeof window === "undefined") return false;

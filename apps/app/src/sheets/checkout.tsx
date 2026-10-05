@@ -130,7 +130,7 @@ export function CheckoutSheet({ link }: { link: PaymentLink }) {
       ),
     },
     { label: "For", value: link.description },
-    // A merchant's checkout names its order in the description ("Halcyon order HC-39073"); the internal ref is only for sample links.
+    // A merchant's checkout names its order in the description ("Halcyon order HC-39073"); the internal ref shows only for a link without a session.
     ...(link.session ? [] : [{ label: "Order", value: link.orderId }]),
   ];
   if (mode === "later" && later && now) {

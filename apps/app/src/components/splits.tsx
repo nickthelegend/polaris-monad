@@ -33,7 +33,6 @@ function readKnown(): string | null {
 }
 
 export function splitWords(split: SplitStatus): SplitMemo | null {
-  if (split.sampleMemo) return split.sampleMemo;
   const known = knownSplit(split.id)?.memo ?? null;
   return memoMatches(known, split.memoHash) ? known : null;
 }

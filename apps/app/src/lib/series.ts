@@ -63,8 +63,8 @@ function ease(t: number, from: number, to: number): number {
 type Origin = {
   /**
    * When the account (or the line) was opened: nothing before it is drawn.
-   * null: not known (only the moves are). Left out (the sample book, which
-   * has no opening): the whole frame, as the moves draw it.
+   * null: not known (only the moves are). Left out: the whole frame, as the
+   * moves draw it.
    */
   since?: number | null;
   /** The figure when it opened: 0 for a dollar account, the limit for a Pay later line. */

@@ -20,11 +20,11 @@ export type AccountView = MiniCard & {
 
 /**
  * The dollar account's number as a buyer sees it: four digits, like a bank
- * card's, worked out from the account (never its hex tail); the sample
- * account's are 2451.
+ * card's, worked out from the account (never its hex tail). No account, no
+ * digits.
  */
 export function accountDigits(owner: string | null): string {
-  if (!owner) return "2451";
+  if (!owner) return "····";
   return String(parseInt(owner.slice(-8), 16) % 10000).padStart(4, "0");
 }
 

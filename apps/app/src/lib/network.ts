@@ -69,7 +69,7 @@ async function load(): Promise<Network> {
   return { chainId: remote.chainId, explorerUrl: remote.explorerUrl, contracts, domains };
 }
 
-/** The relayer's network, or null when this build has no Polaris API (the stub relayer). */
+/** The relayer's network, or null when this build has no Polaris API (and so can't sign). */
 export function getNetwork(): Promise<Network> | null {
   if (!apiConfigured()) return null;
   pending ??= load().catch((error: unknown) => {

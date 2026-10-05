@@ -11,8 +11,7 @@ import { provenanceOf } from "@/lib/provenance";
  * View report" for a DON-signed report, and "Chainlink CRE (simulated)" or
  * "CRE workflow, local run" (not shown as verified) for a report the CLI's
  * simulator or a local chain delivered (lib/provenance.ts). Nothing when there
- * is no report (a new account, or the offline demo's sample line, which nobody
- * attested).
+ * is no report (a new account).
  */
 export function CreditProvenance({ credit, size, className }: { credit: CreditLine | undefined; size?: "sm" | "md"; className?: string }) {
   const v = credit?.verified;

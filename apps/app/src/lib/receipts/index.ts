@@ -4,7 +4,7 @@ import { openReceipt, type ReceiptBody, receiptsReadMessage } from "@polaris/rec
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { Address } from "viem";
 import { getAccount, receiptKeys, signIn, subscribe as subscribeAccount, toAccountError, describeAccountError } from "../account";
-import { api } from "../api";
+import { api, apiConfigured, NOT_CONFIGURED_MESSAGE } from "../api";
 
 /**
  * Opening the receipts only the buyer can read.
@@ -64,6 +64,11 @@ async function openWithSession(): Promise<void> {
   const keys = receiptKeys();
   if (!account || !keys) {
     set({ status: "locked" });
+    return;
+  }
+  if (!apiConfigured()) {
+    // Nothing to read receipts from, so nothing is signed.
+    set({ status: "error", message: NOT_CONFIGURED_MESSAGE });
     return;
   }
   set({ status: "opening" });

@@ -9,7 +9,6 @@ import { afterEach, describe, it } from "node:test";
  * against the Monad testnet deployment, whose dollar is a labelled MockAUSD.
  */
 
-const AGORA_AUSD = "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const KEYS = ["NEXT_PUBLIC_POLARIS_API_URL", "NEXT_PUBLIC_AUSD_ADDRESS"] as const;
 const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
@@ -36,9 +35,10 @@ describe("env.contracts.ausd", () => {
     assert.equal(env.contracts.ausd, ZERO);
   });
 
-  it("is Agora's AUSD on Monad testnet without Polaris (the stub relayer reads its domain)", async () => {
+  it("is unset without Polaris too: no stand-in dollar for a build that can't sign", async () => {
     const env = await envWith({});
-    assert.equal(env.contracts.ausd, AGORA_AUSD);
+    assert.equal(env.contracts.ausd, ZERO);
+    assert.equal(env.apiUrl, undefined);
   });
 
   it("is whatever the build pins, with or without Polaris", async () => {
