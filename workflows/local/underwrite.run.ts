@@ -39,6 +39,7 @@ import {
   toSentConfidential,
 } from "../test/helpers/fixtures-http.ts";
 import { fs } from "../test/helpers/host.ts";
+import { forwarderOf, type LocalDeployment, transmitterOf } from "./config.ts";
 
 type Job = {
   rpc: string;
@@ -48,11 +49,7 @@ type Job = {
   input: { user: Address; linked?: { wallet: Address } | null };
 };
 
-type Deployment = {
-  chainId: number;
-  deployer: Address;
-  contracts: Record<string, { address: Address }>;
-};
+type Deployment = LocalDeployment;
 
 const IN = process.env.LOCAL_TRIGGER_IN ?? "";
 const OUT = process.env.LOCAL_TRIGGER_OUT ?? "";
@@ -72,7 +69,7 @@ test("local underwriting trigger", async () => {
     ...staging,
     receiver: at("UnderwritingReceiver"),
     scoreManager: at("ScoreManager"),
-    forwarder: at("MockKeystoneForwarder"),
+    forwarder: forwarderOf(d),
     stablecoins: [at("Stablecoin")],
     authorizedKeys: [],
     recipe: { ...staging.recipe, accountChainId: d.chainId },
@@ -85,7 +82,7 @@ test("local underwriting trigger", async () => {
   const fixtures = cloneFixtures(pairs);
 
   const selector = cre.capabilities.EVMClient.SUPPORTED_CHAIN_SELECTORS[config.chainSelectorName as keyof typeof cre.capabilities.EVMClient.SUPPORTED_CHAIN_SELECTORS];
-  const record = bridgeEvm(EvmMock.testInstance(selector), { url: job.rpc, forwarder: at("MockKeystoneForwarder"), transmitter: d.deployer });
+  const record = bridgeEvm(EvmMock.testInstance(selector), { url: job.rpc, forwarder: forwarderOf(d), transmitter: transmitterOf(d) });
   const callbacks: SentRequest[] = [];
   const http = HttpActionsMock.testInstance();
   http.sendRequest = (input) => {

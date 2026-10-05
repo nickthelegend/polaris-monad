@@ -6,7 +6,14 @@
  * `cre workflow simulate --broadcast` plays (the CLI's FakeEVMChain):
  *
  *   callContract / estimateGas   eth_call / eth_estimateGas, at the block asked for ("finalized"
- *                                reads the head: a local node has no lag; a number reads that block)
+ *                                reads the head: a local node has no lag; a number reads that block).
+ *                                An estimate of a delivery (`forwarder.report(...)`) is the gas a
+ *                                traced delivery uses with room to spare (`tracedDeliveryGas`), not
+ *                                eth_estimateGas: Chainlink's MockKeystoneForwarder catches the
+ *                                receiver's revert cheaply, so on a fork of Monad testnet an
+ *                                estimate settles where the receiver runs out of gas inside the
+ *                                catch and the delivery still lands (packages/contracts README,
+ *                                "Rehearse real AUSD on a fork").
  *   headerByNumber               eth_getBlockByNumber: number and timestamp
  *   writeReport                  MockKeystoneForwarder.report(receiver, rawReport, context, sigs),
  *                                sent by the broadcasting key with the workflow's gas limit, and
@@ -22,7 +29,7 @@
 
 import { blockNumber, type EVMLog, hexToBase64, protoBigIntToBigint } from "@chainlink/cre-sdk";
 import type { EvmMock } from "@chainlink/cre-sdk/test";
-import { type Address, encodeFunctionData, type Hex, hexToBytes, numberToBytes, parseAbi } from "viem";
+import { type Address, encodeFunctionData, type Hex, hexToBytes, numberToBytes, parseAbi, toFunctionSelector } from "viem";
 import { childProcess } from "../../test/helpers/host.ts";
 
 const hex = (bytes: Uint8Array | undefined): Hex => `0x${Buffer.from(bytes ?? new Uint8Array()).toString("hex")}`;
@@ -44,6 +51,42 @@ export function rpcSync<T = unknown>(url: string, method: string, params: unknow
 }
 
 const FORWARDER_ABI = parseAbi(["function report(address receiver, bytes rawReport, bytes reportContext, bytes[] signatures)"]);
+const REPORT_SELECTOR = toFunctionSelector(FORWARDER_ABI[0]);
+
+/**
+ * A sent transaction's receipt. A Hardhat node has it when eth_sendTransaction
+ * returns; an anvil fork may still be mining it (it fetches the forked state
+ * the block touches), so wait for it, synchronously, up to `timeoutMs`.
+ */
+export function receiptOf(url: string, hash: Hex, timeoutMs = 120_000): RpcReceipt {
+  const started = Date.now();
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    const receipt = rpcSync<RpcReceipt | null>(url, "eth_getTransactionReceipt", [hash]);
+    if (receipt) return receipt;
+    if (Date.now() - started > timeoutMs) throw new Error(`no receipt for ${hash} after ${timeoutMs / 1000} s`);
+    Atomics.wait(pause, 0, 0, 200);
+  }
+}
+
+/** Gas a traced call may spend: room for any report the receivers take. */
+const TRACE_GAS = 5_000_000n;
+
+/**
+ * The gas a delivery through the forwarder uses on the path where the
+ * receiver has all the gas it wants: `debug_traceCall` with TRACE_GAS, its
+ * `gasUsed`. The workflow's own headroom then applies, as it would to an
+ * estimate. Null when the node can't trace (the caller falls back to
+ * eth_estimateGas).
+ */
+export function tracedDeliveryGas(url: string, msg: { from: Hex; to: Hex; data: Hex }): bigint | null {
+  try {
+    const trace = rpcSync<{ gasUsed?: Hex }>(url, "debug_traceCall", [{ ...msg, gas: `0x${TRACE_GAS.toString(16)}` }, "latest", { tracer: "callTracer" }]);
+    return trace?.gasUsed ? BigInt(trace.gasUsed) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface RpcLog {
   address: Address;
@@ -101,7 +144,12 @@ export function bridgeEvm(evm: EvmMock, p: { url: string; forwarder: Address; tr
   };
   evm.estimateGas = (req) => {
     record.reads++;
-    const gas = rpcSync<Hex>(p.url, "eth_estimateGas", [{ from: hex(req.msg?.from), to: hex(req.msg?.to), data: hex(req.msg?.data) }]);
+    const msg = { from: hex(req.msg?.from), to: hex(req.msg?.to), data: hex(req.msg?.data) };
+    if (msg.to.toLowerCase() === p.forwarder.toLowerCase() && msg.data.startsWith(REPORT_SELECTOR)) {
+      const traced = tracedDeliveryGas(p.url, msg);
+      if (traced !== null) return { gas: traced.toString() };
+    }
+    const gas = rpcSync<Hex>(p.url, "eth_estimateGas", [msg]);
     return { gas: BigInt(gas).toString() };
   };
   evm.writeReport = (req) => {
@@ -111,7 +159,7 @@ export function bridgeEvm(evm: EvmMock, p: { url: string; forwarder: Address; tr
     const data = encodeFunctionData({ abi: FORWARDER_ABI, functionName: "report", args: [receiver, raw, hex(req.report?.reportContext), sigs] });
     const gasLimit = req.gasConfig?.gasLimit ?? 0n;
     const txHash = rpcSync<Hex>(p.url, "eth_sendTransaction", [{ from: p.transmitter, to: p.forwarder, data, gas: gasLimit }]);
-    const receipt = rpcSync<RpcReceipt>(p.url, "eth_getTransactionReceipt", [txHash]);
+    const receipt = receiptOf(p.url, txHash);
     record.writes.push({ receiver, txHash, gasLimit, gasUsed: BigInt(receipt.gasUsed), body: `0x${raw.slice(2 + 218)}` });
     return {
       txStatus: receipt.status === "0x1" ? "TX_STATUS_SUCCESS" : "TX_STATUS_REVERTED",
@@ -121,7 +169,7 @@ export function bridgeEvm(evm: EvmMock, p: { url: string; forwarder: Address; tr
   };
   evm.getTransactionReceipt = (req) => {
     record.reads++;
-    const r = rpcSync<RpcReceipt>(p.url, "eth_getTransactionReceipt", [hex(req.hash)]);
+    const r = receiptOf(p.url, hex(req.hash));
     return {
       receipt: {
         status: BigInt(r.status).toString(),
@@ -224,7 +272,7 @@ export function travel(url: string, seconds: number): void {
 /** Send a transaction from an unlocked node account and require it to succeed. */
 export function sendTx(url: string, tx: { from: Address; to: Address; data: Hex }): RpcReceipt {
   const hash = rpcSync<Hex>(url, "eth_sendTransaction", [tx]);
-  const receipt = rpcSync<RpcReceipt>(url, "eth_getTransactionReceipt", [hash]);
+  const receipt = receiptOf(url, hash);
   if (receipt.status !== "0x1") throw new Error(`transaction to ${tx.to} reverted`);
   return receipt;
 }

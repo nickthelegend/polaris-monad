@@ -43,7 +43,7 @@ import { configSchema, onCron, onReauthorized } from "../src/collections/workflo
 import { signCallback } from "../src/shared/callback.ts";
 import { type CreRequestLike, type SentRequest, toSent } from "../test/helpers/fixtures-http.ts";
 import { fs } from "../test/helpers/host.ts";
-import { CALLBACK_SECRET_ID, type LocalDeployment, localCollectionsConfig } from "./config.ts";
+import { CALLBACK_SECRET_ID, type LocalDeployment, localCollectionsConfig, transmitterOf } from "./config.ts";
 
 export type CollectionsJob = {
   rpc: string;
@@ -71,7 +71,7 @@ test("local collections run", async () => {
   const config = configSchema.parse(localCollectionsConfig(d, templates, { everySeconds: job.everySeconds, callbackUrl: job.callback?.url ?? null }));
 
   const selector = cre.capabilities.EVMClient.SUPPORTED_CHAIN_SELECTORS[config.chainSelectorName as keyof typeof cre.capabilities.EVMClient.SUPPORTED_CHAIN_SELECTORS];
-  const record = bridgeEvm(EvmMock.testInstance(selector), { url: job.rpc, forwarder: config.forwarder, transmitter: d.deployer });
+  const record = bridgeEvm(EvmMock.testInstance(selector), { url: job.rpc, forwarder: config.forwarder, transmitter: transmitterOf(d) });
   const callbacks: SentRequest[] = [];
   const http = HttpActionsMock.testInstance();
   http.sendRequest = (input) => {
