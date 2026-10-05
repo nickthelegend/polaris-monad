@@ -22,7 +22,7 @@ import {
   type ChartType,
   type StatusPillTone,
 } from "@polaris/ui";
-import { ArrowRight, BadgeCheck, Check, Layers, Link2, ShieldCheck, Sparkles, Users, Workflow } from "lucide-react";
+import { ArrowRight, BadgeCheck, Check, Layers, Link2, ShieldCheck, Users, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,14 +30,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { MoneyWidget } from "@/components/dashboard/money-widget";
 import { MODE_COLOR, PaymentName, paymentPill } from "@/components/dashboard/payment-bits";
-import { DataModeNotice, LoadError, Panel, PanelEmpty, SampleBadge, SeeAll, StaleNotice, useNow } from "@/components/dashboard/common";
+import { LoadError, Panel, PanelEmpty, SeeAll, StaleNotice, useNow } from "@/components/dashboard/common";
 import { RegistrationNotice } from "@/components/dashboard/registration";
 import { customersThisWeek, salesByMode, salesSeries, SERIES_FRAMES, type SeriesFrame } from "@/lib/data/analytics";
 import { formatAgo, MODE_LABEL, money, shortAddress } from "@/lib/data/format";
-import { getCollectionsRun, getIndexedEvents, getUnderwritingReasons, placeholderNextEvent, type IndexedEvent } from "@/lib/data/insights";
-import type { Insights, Overview, PayMode, Payment, Plan } from "@/lib/data/types";
+import { getCollectionsRun, getIndexedEvents, getUnderwritingReasons } from "@/lib/data/insights";
+import type { Overview, PayMode, Payment, Plan } from "@/lib/data/types";
 import { useMerchant } from "@/lib/merchant-context";
-import { LIVE_REFRESH_MS, useQuery, useSample, type QueryState } from "@/lib/session";
+import { LIVE_REFRESH_MS, useQuery, type QueryState } from "@/lib/session";
 
 /**
  * The Overview is ref E's main screen, mapped to Polaris: the sales chart
@@ -46,7 +46,6 @@ import { LIVE_REFRESH_MS, useQuery, useSample, type QueryState } from "@/lib/ses
  */
 export function OverviewView() {
   const { merchant } = useMerchant();
-  const sample = useSample();
   // A new payment is on screen within seconds (3 s under demo:local, 10 s in production).
   const overview = useQuery((d) => d.getOverview(), { refreshMs: LIVE_REFRESH_MS });
   const payments = useQuery((d) => d.listPayments(), { refreshMs: LIVE_REFRESH_MS });
@@ -59,15 +58,14 @@ export function OverviewView() {
     <>
       <h1 className="sr-only">Overview, {merchant.businessName}</h1>
       <StaleNotice queries={[overview, payments, plans] as QueryState<unknown>[]} />
-      <RegistrationNotice className="mb-6" />
       {/* When nothing has sold, the chart and the checklist below say what to do. */}
-      <DataModeNotice empty={false} />
+      <RegistrationNotice className="mb-6" />
 
       {/* Ref E: the chart and the table on the left, the widget on the right. */}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-10 lg:grid-cols-[minmax(0,1fr)_356px] xl:grid-cols-[minmax(0,1fr)_404px] xl:gap-x-11">
-        <SalesChart payments={payments} sample={sample.on} empty={empty} className="lg:col-start-1 lg:row-start-1" />
+        <SalesChart payments={payments} empty={empty} className="lg:col-start-1 lg:row-start-1" />
         <MoneyWidget payments={list} className="lg:col-start-2 lg:row-span-2 lg:row-start-1" />
-        <RecentPayments payments={payments} sample={sample.on} className="lg:col-start-1 lg:row-start-2" />
+        <RecentPayments payments={payments} className="lg:col-start-1 lg:row-start-2" />
       </div>
 
       {empty ? (
@@ -77,11 +75,11 @@ export function OverviewView() {
         <>
           <h2 className="mt-14 text-[22px] leading-tight font-medium tracking-[-0.02em] sm:mt-16">Your business this month</h2>
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <CustomersPanel payments={list} error={payments.error && !list ? payments : null} sample={sample.on} />
-            <ModesPanel payments={list} sample={sample.on} />
-            <ExposurePanel overview={overview.data} plans={plans.data} sample={sample.on} className="md:col-span-2 xl:col-span-1" />
-            <CollectionsPanel plans={plans.data} collector={overview.data?.collector} sample={sample.on} />
-            <EnvioFeed payments={list} plans={plans.data} insights={overview.data?.insights} sample={sample.on} className="xl:col-span-2" />
+            <CustomersPanel payments={list} error={payments.error && !list ? payments : null} />
+            <ModesPanel payments={list} />
+            <ExposurePanel overview={overview.data} plans={plans.data} className="md:col-span-2 xl:col-span-1" />
+            <CollectionsPanel plans={plans.data} collector={overview.data?.collector} />
+            <EnvioFeed overview={overview} className="xl:col-span-2" />
           </div>
         </>
       )}
@@ -114,8 +112,7 @@ function timeLabel(frame: SeriesFrame) {
   };
 }
 
-function SalesChart({ payments, sample, empty, className }: { payments: QueryState<Payment[]>; sample: boolean; empty: boolean; className?: string }) {
-  const preview = useSample();
+function SalesChart({ payments, empty, className }: { payments: QueryState<Payment[]>; empty: boolean; className?: string }) {
   const [metric, setMetric] = useState<Metric>("sales");
   const [frame, setFrame] = useState<SeriesFrame>("24h");
   const [type, setType] = useState<ChartType>("line");
@@ -152,7 +149,6 @@ function SalesChart({ payments, sample, empty, className }: { payments: QuerySta
                 label={series.deltaPct === null ? (series.count ? "New" : "No sales yet") : undefined}
                 title={series.deltaPct === null ? "Nothing to compare with yet" : SERIES_FRAMES[frame].versus}
               />
-              {sample ? <SampleBadge /> : null}
             </>
           ) : (
             <Skeleton width={260} height={44} />
@@ -185,16 +181,9 @@ function SalesChart({ payments, sample, empty, className }: { payments: QuerySta
                   {empty ? "No sales yet. Your first one draws this line." : `No ${metric === "sales" ? "sales" : m.label.replace(" / USD", "")} in ${FRAME_TITLE[frame]}`}
                 </p>
                 {empty ? (
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <PrimaryButton asChild size="sm" icon={<Link2 />}>
-                      <Link href="/dashboard/links?new=1">New payment link</Link>
-                    </PrimaryButton>
-                    {preview.canToggle ? (
-                      <SecondaryButton size="sm" icon={<Sparkles />} onClick={() => preview.setPreview(true)}>
-                        Preview with sample data
-                      </SecondaryButton>
-                    ) : null}
-                  </div>
+                  <PrimaryButton asChild size="sm" icon={<Link2 />}>
+                    <Link href="/dashboard/links?new=1">New payment link</Link>
+                  </PrimaryButton>
                 ) : null}
               </div>
             }
@@ -217,7 +206,7 @@ function SalesChart({ payments, sample, empty, className }: { payments: QuerySta
 
 /* ── Recent payments: ref E's borderless table with status pills ────────── */
 
-function RecentPayments({ payments, sample, className }: { payments: QueryState<Payment[]>; sample: boolean; className?: string }) {
+function RecentPayments({ payments, className }: { payments: QueryState<Payment[]>; className?: string }) {
   const router = useRouter();
   const now = useNow(30_000);
   const rows = payments.data?.slice(0, 5) ?? [];
@@ -266,8 +255,7 @@ function RecentPayments({ payments, sample, className }: { payments: QueryState<
           },
         ]}
       />
-      <div className="mt-3 flex items-center justify-between gap-3">
-        {sample ? <SampleBadge /> : <span />}
+      <div className="mt-3 flex items-center justify-end gap-3">
         <Link
           href="/dashboard/payments"
           className="inline-flex h-10 items-center gap-1.5 rounded-full px-1 text-[15px] text-ui-muted transition-colors hover:text-ui-lime-active"
@@ -282,10 +270,10 @@ function RecentPayments({ payments, sample, className }: { payments: QueryState<
 
 /* ── Customers this week (bars) ─────────────────────────────────────────── */
 
-function CustomersPanel({ payments, error, sample }: { payments?: Payment[]; error: QueryState<Payment[]> | null; sample: boolean }) {
+function CustomersPanel({ payments, error }: { payments?: Payment[]; error: QueryState<Payment[]> | null }) {
   const week = useMemo(() => (payments ? customersThisWeek(payments) : null), [payments]);
   return (
-    <Panel title="Customers this week" sample={sample} action={<SeeAll href="/dashboard/payments" />}>
+    <Panel title="Customers this week" action={<SeeAll href="/dashboard/payments" />}>
       {error ? (
         <LoadError query={error as QueryState<unknown>} />
       ) : !week ? (
@@ -350,7 +338,6 @@ const BAR_LABELS = 34;
 
 function GettingStarted() {
   const links = useQuery((d) => d.listLinks());
-  const preview = useSample();
   const hasLink = (links.data?.length ?? 0) > 0;
   const steps = [
     {
@@ -377,11 +364,7 @@ function GettingStarted() {
       title: "Your first payment",
       body: "It lands in your balance within a second of the buyer confirming, in full, even on Pay in 4.",
       done: false,
-      action: preview.canToggle ? (
-        <SecondaryButton size="sm" icon={<Sparkles />} onClick={() => preview.setPreview(true)}>
-          Preview with sample data
-        </SecondaryButton>
-      ) : null,
+      action: null,
     },
   ];
   return (
@@ -416,11 +399,11 @@ function GettingStarted() {
 
 /* ── Sales by mode (donut) ──────────────────────────────────────────────── */
 
-function ModesPanel({ payments, sample }: { payments?: Payment[]; sample: boolean }) {
+function ModesPanel({ payments }: { payments?: Payment[] }) {
   const split = useMemo(() => (payments ? salesByMode(payments, { days: 30 }) : null), [payments]);
   const total = split?.reduce((s, m) => s + m.cents, 0) ?? 0;
   return (
-    <Panel title="Sales by mode" subtitle={split ? `Last 30 days · ${money(total)}` : "Last 30 days"} sample={sample}>
+    <Panel title="Sales by mode" subtitle={split ? `Last 30 days · ${money(total)}` : "Last 30 days"}>
       {!split ? (
         <Skeleton shape="tile" height={280} className="mt-5" />
       ) : total === 0 ? (
@@ -447,12 +430,12 @@ function ModesPanel({ payments, sample }: { payments?: Payment[]; sample: boolea
 
 /* ── Credit exposure, with the reasons behind the lines (Nansen) ────────── */
 
-function ExposurePanel({ overview, plans, sample, className }: { overview?: Overview; plans?: Plan[]; sample: boolean; className?: string }) {
+function ExposurePanel({ overview, plans, className }: { overview?: Overview; plans?: Plan[]; className?: string }) {
   const e = overview?.exposure;
   const insights = overview?.insights;
-  const reasons = useMemo(() => (plans ? getUnderwritingReasons({ sample, plans, insights }) : null), [plans, sample, insights]);
+  const reasons = useMemo(() => (plans ? getUnderwritingReasons({ insights }) : null), [plans, insights]);
   return (
-    <Panel title="Credit exposure" subtitle="Pay in 4 plans still collecting" sample={sample} action={<SeeAll href="/dashboard/plans">Ledger</SeeAll>} className={className}>
+    <Panel title="Credit exposure" subtitle="Pay in 4 plans still collecting" action={<SeeAll href="/dashboard/plans">Ledger</SeeAll>} className={className}>
       {!e || !reasons ? (
         <Skeleton shape="tile" height={260} className="mt-5" />
       ) : (
@@ -512,25 +495,19 @@ function Figure({ label, value, note, tone }: { label: string; value: string; no
 
 /* ── Collections: the Chainlink CRE workflow's last and next run ────────── */
 
-function CollectionsPanel({ plans, collector, sample }: { plans?: Plan[]; collector?: Overview["collector"]; sample: boolean }) {
+function CollectionsPanel({ plans, collector }: { plans?: Plan[]; collector?: Overview["collector"] }) {
   const now = useNow(1000);
-  const run = useMemo(() => (plans ? getCollectionsRun({ sample, plans, collector }) : null), [plans, sample, collector]);
-  // The placeholder's clock keeps moving (the next run is always the next
-  // minute); a live run shows its real report time.
-  const nextAt =
-    run?.source === "placeholder"
-      ? Math.ceil((now - 4000) / 60_000) * 60_000 + 4000
-      : run?.source === "live"
-        ? Date.parse(run.data.nextRunAt)
-        : null;
-  const lastAt = run?.source === "live" ? Date.parse(run.data.lastRun.at) : nextAt ? nextAt - 60_000 : null;
+  const run = useMemo(() => (plans ? getCollectionsRun({ plans, collector }) : null), [plans, collector]);
+  // The workflow's real report time, and the next minute's run after it.
+  const nextAt = run?.source === "live" ? Date.parse(run.data.nextRunAt) : null;
+  const lastAt = run?.source === "live" ? Date.parse(run.data.lastRun.at) : null;
   const ago = (ms: number) => (ms < 90_000 ? `${Math.max(0, Math.round(ms / 1000))} s ago` : formatAgo(new Date(now - ms).toISOString(), now));
   return (
-    <Panel title="Collections" subtitle="Chainlink CRE workflow" sample={sample} action={<SeeAll href="/dashboard/chainlink">Chainlink</SeeAll>}>
+    <Panel title="Collections" subtitle="Chainlink CRE workflow" action={<SeeAll href="/dashboard/chainlink">Chainlink</SeeAll>}>
       {!run ? (
         <Skeleton shape="tile" height={260} className="mt-5" />
       ) : run.source === "not_connected" ? (
-        <PanelEmpty icon={<Workflow />} title="Not reporting yet" description={run.reason} />
+        <PanelEmpty icon={<Workflow />} title="No collections run yet" description={run.reason} />
       ) : (
         <>
           <div className="mt-5 grid grid-cols-2 gap-2.5">
@@ -597,44 +574,20 @@ function eventTone(type: string): StatusPillTone {
   return "lime";
 }
 
-function EnvioFeed({
-  payments,
-  plans,
-  insights,
-  sample,
-  className,
-}: {
-  payments?: Payment[];
-  plans?: Plan[];
-  insights?: Insights;
-  sample: boolean;
-  className?: string;
-}) {
+function EnvioFeed({ overview, className }: { overview: QueryState<Overview>; className?: string }) {
   const now = useNow(10_000);
-  const feed = useMemo(() => (payments && plans ? getIndexedEvents({ sample, payments, plans, insights }) : null), [payments, plans, sample, insights]);
+  const insights = overview.data?.insights;
+  const feed = useMemo(() => (overview.data ? getIndexedEvents({ insights }) : null), [overview.data, insights]);
   const viaSync = feed?.source === "live" && feed.via === "chain-sync";
-  const [live, setLive] = useState<IndexedEvent[]>([]);
-
-  // Sample mode: a new sample event every few seconds, so the feed moves as it will live.
-  useEffect(() => {
-    if (!feed || feed.source !== "placeholder") return;
-    let seq = 0;
-    const id = setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      setLive((l) => [placeholderNextEvent(seq++), ...l].slice(0, 3));
-    }, 9000);
-    return () => clearInterval(id);
-  }, [feed]);
-
-  const events = feed && feed.source !== "not_connected" ? [...live, ...feed.data].slice(0, 6) : [];
+  const indexerError = insights?.indexer.source === "envio-error";
+  const events = feed?.source === "live" ? feed.data.slice(0, 6) : [];
   return (
     <Panel
       title="Indexed by Envio"
       subtitle={viaSync ? "Envio isn't connected: from this server's chain sync" : "Chain events as they settle"}
-      sample={sample}
       className={className}
       action={
-        // "Streaming" only when it is: sample events carry the Sample chip instead.
+        // "Streaming" only when it is.
         viaSync ? (
           <StatusPill tone="neutral" size="sm">
             Chain sync
@@ -649,7 +602,9 @@ function EnvioFeed({
       {!feed ? (
         <Skeleton shape="tile" height={260} className="mt-5" />
       ) : feed.source === "not_connected" ? (
-        <PanelEmpty icon={<BadgeCheck />} title="The indexer isn't connected yet" description={feed.reason} />
+        <PanelEmpty icon={<BadgeCheck />} title={indexerError ? "The indexer didn't answer" : "Indexer not configured"} description={feed.reason} />
+      ) : events.length === 0 ? (
+        <PanelEmpty icon={<BadgeCheck />} title="No chain events yet" description="Payments, plans and payouts appear here as the indexer sees them on Monad." />
       ) : (
         <ul className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)]">
           <AnimatePresence initial={false}>

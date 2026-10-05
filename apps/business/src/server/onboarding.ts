@@ -186,7 +186,7 @@ export async function submitRegistration(auth: AuthedMerchant, body: Record<stri
  */
 async function distinctPayers(merchantId: string): Promise<number> {
   const payments = await getDb().payments.find({ merchantId });
-  return new Set(payments.filter((p) => p.kind === "now" && !p.mismatch && !p.sample).map((p) => p.payer.toLowerCase())).size;
+  return new Set(payments.filter((p) => p.kind === "now" && !p.mismatch).map((p) => p.payer.toLowerCase())).size;
 }
 
 /**

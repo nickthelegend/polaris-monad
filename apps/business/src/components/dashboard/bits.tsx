@@ -82,7 +82,7 @@ export function Address({ value, label, explorer = true }: { value: string; labe
 }
 
 /** The settling transaction, or why there isn't one to link to. */
-export function TxLink({ hash, sample }: { hash: string | null; sample: boolean }) {
+export function TxLink({ hash }: { hash: string | null }) {
   if (hash) {
     return (
       <a
@@ -96,7 +96,7 @@ export function TxLink({ hash, sample }: { hash: string | null; sample: boolean 
       </a>
     );
   }
-  return <span className="text-ui-muted">{sample ? "Sample: no transaction" : "Not on chain yet"}</span>;
+  return <span className="text-ui-muted">Not on chain yet</span>;
 }
 
 /** Download rows as a CSV file (quoted, with a header). */

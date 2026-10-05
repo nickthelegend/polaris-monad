@@ -48,9 +48,8 @@ function subscribe(onChange: () => void) {
 }
 
 /**
- * DEVELOPMENT ONLY: `pnpm demo:local`'s signed-in dashboard. Unlike the mock
- * session it reads and writes the real API, as the demo merchant on the local
- * chain: the server accepts this run's random token only there (server/auth.ts
+ * DEVELOPMENT ONLY: `pnpm demo:local`'s signed-in dashboard. It reads and
+ * writes the real API, as the demo merchant on the local chain: the server accepts this run's random token only there (server/auth.ts
  * `localSession`). Its wallet signs with this run's throwaway key
  * (registration, withdrawals); Privy's automatic payouts aren't available.
  */
@@ -86,7 +85,6 @@ export function LocalAuthProvider({ children }: { children: ReactNode }) {
       logout,
       getAccessToken: async () => (signedOut ? null : LOCAL_SESSION_TOKEN),
       retry: () => window.location.reload(),
-      mock: false,
       wallet: {
         address: LOCAL_SESSION_WALLET,
         ready: true,

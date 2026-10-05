@@ -21,11 +21,6 @@ export type Merchant = {
   /** What webhooks and the public API call this merchant: `mer_…`. */
   publicId?: string;
   /**
-   * The server has no chain connected, so this merchant's payments, plans and
-   * payouts are a labelled sample book (and nothing can be relayed).
-   */
-  sample?: boolean;
-  /**
    * MerchantRegistry, on chain. `registered` merchants can take payments;
    * `active` ones can also offer Pay in 4 (activation sets their cap).
    */
@@ -57,8 +52,6 @@ export type PaymentLink = {
   paymentsCount: number;
   collectedCents: Cents;
   createdAt: IsoDate;
-  /** Part of a server's sample book (no chain yet): labelled, and it can't be changed. */
-  sample?: boolean;
 };
 
 export type CreateLinkInput = {
@@ -91,11 +84,9 @@ export type Payment = {
   /** What reached the merchant, in AUSD micro-units, so totals add up before they are truncated to cents. */
   netUnits?: string;
   linkId: string | null;
-  /** Set once the indexer has seen the settling transaction. Null for sample rows. */
+  /** Set once the indexer has seen the settling transaction. */
   txHash: `0x${string}` | null;
   createdAt: IsoDate;
-  /** Part of a server's sample book: labelled in its row. */
-  sample?: boolean;
 };
 
 /* ── Pay in 4 ───────────────────────────────────────────────────────────── */
@@ -120,8 +111,6 @@ export type Plan = {
   attempts: number;
   nextDueAt: IsoDate | null;
   openedAt: IsoDate;
-  /** Part of a server's sample book: labelled in its row. */
-  sample?: boolean;
 };
 
 export type CollectorStatus = {
@@ -158,8 +147,7 @@ export type Overview = {
   };
   collector: CollectorStatus;
   autoPayouts: AutoPayouts;
-  sample: boolean;
-  /** The sponsor panels' live data (server/insights.ts); absent for a sample book. */
+  /** The sponsor panels' live data (server/insights.ts); absent when it couldn't be read. */
   insights?: Insights;
 };
 
@@ -193,8 +181,6 @@ export type Payout = {
   signed: boolean;
   txHash: `0x${string}` | null;
   createdAt: IsoDate;
-  /** Part of a server's sample book, or paid out of its sample balance. */
-  sample?: boolean;
 };
 
 export type AutoPayouts = {

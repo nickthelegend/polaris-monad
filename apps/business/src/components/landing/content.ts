@@ -1,5 +1,5 @@
 /**
- * The merchant landing's copy and its fixed sample figures. Everything here is
+ * The merchant landing's copy and its worked examples. Everything here is
  * illustrative (an invented studio, "Oat & Ember"), and the figures are pure
  * arithmetic with no clock or timezone in them, so the server and the browser
  * render the same page.

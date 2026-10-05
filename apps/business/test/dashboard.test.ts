@@ -48,19 +48,19 @@ describe("dashboard routes", () => {
     }
   });
 
-  it("show a labelled sample book when no chain is configured", async () => {
+  it("show an empty book when no chain is configured, never an invented one", async () => {
     setupServer({ POLARIS_DEPLOYMENT_FILE: "does-not-exist.json", RELAYER_MODE: "off" });
-    signIn({ userId: "did:privy:sample", walletAddress: "0x2222222222222222222222222222222222222222" });
+    signIn({ userId: "did:privy:nochain", walletAddress: "0x2222222222222222222222222222222222222222" });
     const res = await json(await overview(request("GET", "/api/overview"), params({})));
     expect(res.status).toBe(200);
-    expect(res.body.data.sample).toBe(true);
-    expect(res.body.data.today).toBeDefined();
+    expect(res.body.data).toMatchObject({ balanceCents: 0, today: { count: 0, grossCents: 0, payments: [] }, collector: { state: "stopped", lastPassAt: null } });
+    expect(res.body.data).not.toHaveProperty("sample");
   });
 
   it("show the real book, from chain events only, when a chain is configured", async () => {
     signIn({ userId: "did:privy:real", walletAddress: "0x2222222222222222222222222222222222222222" });
     const res = await json(await overview(request("GET", "/api/overview"), params({})));
-    expect(res.body.data).toMatchObject({ sample: false, balanceCents: 100_000, today: { count: 0 } });
+    expect(res.body.data).toMatchObject({ balanceCents: 100_000, today: { count: 0 } });
   });
 });
 

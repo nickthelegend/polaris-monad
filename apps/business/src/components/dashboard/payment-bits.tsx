@@ -2,8 +2,6 @@
 
 import { Coin, TableName, type CoinTone, type StatusPillTone } from "@polaris/ui";
 
-import { SampleBadge } from "./common";
-
 import { shortAddress } from "@/lib/data/format";
 import type { PayMode, Payment } from "@/lib/data/types";
 
@@ -56,7 +54,7 @@ export function BuyerCoin({ address, size = 28 }: { address: string; size?: numb
  * The first column: the coin and the buyer, with what they bought under it
  * when there's room. On phones, where the Status column is hidden, the sub
  * line leads with it ("Pay in 4 · Website audit"), like the app's activity
- * rows; a row from a server's sample book carries the Sample chip.
+ * rows.
  */
 /**
  * A payment's buyer, with a sub line. `sub`: the status (below sm) and the
@@ -72,7 +70,6 @@ export function PaymentName({ p, sub }: { p: Payment; sub?: boolean | "fold" }) 
       title={
         <span className="flex min-w-0 items-center gap-2">
           <span className="ui-figure truncate">{shortAddress(p.buyer, 6, 4)}</span>
-          {p.sample ? <SampleBadge className="shrink-0" /> : null}
         </span>
       }
       sub={
