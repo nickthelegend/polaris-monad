@@ -64,7 +64,12 @@ Each task: objective · acceptance · verify · status.
   the account's own digits; 69 app tests
 - **P1.8 Add to Boost / take out.** The app could not lock collateral,
   though the relayer supports `lockCollateral`; without Nansen/Zerion keys
-  it is the real way to raise a limit. · IN PROGRESS
+  it is the real way to raise a limit. · DONE for Add (6 Oct): one Face ID
+  confirm signs an AUSD permit to the vault and relays `lockCollateral`; the
+  sheet shows the new Boost and limit read back from the chain; 75 app tests.
+  Take out: BLOCKED (contract): `CollateralVault.withdraw` pays only the
+  caller, so a buyer with no MON can't, and the relayer can't on their
+  behalf; needs a signed withdraw and a redeploy (team decision)
 - **P1.2 Business without the dev mock session.** Remove
   `POLARIS_DEV_MOCK_SESSION`, `components/auth/mock-auth.tsx`,
   `lib/data/sample.ts`, `chainlink-sample.ts` and the `placeholder` branches
