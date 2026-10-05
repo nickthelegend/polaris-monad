@@ -8,7 +8,9 @@
 // dev signer) with dollars from the local faucet; Halcyon's
 // bag -> Polaris checkout popup -> Pay now; that purchase's receipt sealed to the buyer's
 // Face ID key (the server holds only ciphertext) and opened in the app; Halcyon -> popup -> Raise your limit (the
-// CRE underwriting workflow, local trigger) -> Pay in 4; both shop orders marked paid
+// CRE underwriting workflow, local trigger; without provider keys it opens no line and says so, and the buyer then
+// adds enough to Boost in the app, one Face ID, for the line to cover the plan) -> Pay in 4, checked on chain;
+// both shop orders marked paid
 // by Polaris webhooks; the merchant's dashboard showing the payments, the plan and its
 // on-chain registration; then split the bill (scripts/demo-e2e-split.cjs: one link, four
 // people, shares paid, the split closed; DEMO_E2E_SPLIT=0 skips it). Screenshots go to
@@ -32,6 +34,16 @@ const FAUCET = process.env.FAUCET || (demo.urls.faucet ? demo.urls.faucet.replac
 // Hardhat mode's app signs with the dev signer; fork mode's with passkeys, so every browser profile gets an authenticator.
 const DEV_SIGNER = demo.devSigner !== false;
 const { privateKeyToAccount } = require(require.resolve("viem/accounts", { paths: [path.join(__dirname, "..", "apps", "business")] }));
+const viem = require(require.resolve("viem", { paths: [path.join(__dirname, "..", "apps", "business")] }));
+// The run's contracts (demo.json), read straight from the node with their exported ABIs: what the steps assert on chain.
+const CONTRACTS = demo.contracts ?? {};
+const ABI_DIR = path.join(__dirname, "..", "packages", "contracts", "abi");
+const ERC20 = viem.parseAbi(["function balanceOf(address) view returns (uint256)", "event Transfer(address indexed from, address indexed to, uint256 value)"]);
+const chain = viem.createPublicClient({ transport: viem.http(RPC) });
+const abiOf = (name) => (name === "Stablecoin" ? ERC20 : JSON.parse(fs.readFileSync(path.join(ABI_DIR, `${name}.json`), "utf8")));
+const read = (name, functionName, args = []) => chain.readContract({ address: CONTRACTS[name], abi: abiOf(name), functionName, args });
+/** Base units (6 decimals) as the app writes dollars: $1,234.50. */
+const dollars = (units) => `$${(Number(units) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 // A first `next dev` compile of the checkout can take a minute or more; demo:local warms it, but be patient.
 const POPUP_MS = 180000;
 const OUT = process.env.OUT || path.join(__dirname, "..", "docs", "demo");
@@ -191,6 +203,165 @@ async function receiptInPopup(popup, name) {
   return Boolean(seen);
 }
 
+/**
+ * The buyer's Boost and line as the chain has them: CollateralVault's lockedOf and multiplier, the dollar balance,
+ * ScoreManager's creditLimitOf, and whether ScoreManager lends this account only against collateral (declined, or not
+ * underwritten while underwriting is required), in which case Boost counts at face value, not the multiplier.
+ */
+async function boostState(buyer) {
+  const [locked, balance, limit, multiplierBps, profile, requireUnderwriting] = await Promise.all([
+    read("CollateralVault", "lockedOf", [buyer]),
+    read("Stablecoin", "balanceOf", [buyer]),
+    read("ScoreManager", "creditLimitOf", [buyer]),
+    read("CollateralVault", "creditMultiplierBps"),
+    read("ScoreManager", "profileOf", [buyer]),
+    read("ScoreManager", "requireUnderwriting"),
+  ]);
+  const securedOnly = profile.declined || (requireUnderwriting && !profile.underwritten);
+  return { locked, balance, limit, multiplierBps: Number(multiplierBps), securedOnly };
+}
+
+/** PolarisCheckout.quotePlan for a checkout session's Pay in 4 terms: the total owed with interest, and whether the line covers it. */
+async function quoteFor(buyer, terms) {
+  return read("PolarisCheckout", "quotePlan", [buyer, BigInt(terms.principalUnits), Number(terms.installments), BigInt(terms.intervalSeconds)]);
+}
+
+/**
+ * Add to Boost in the app's own UI (the desktop Credit page's Add to Boost, or the Credit line's Boost row): enough
+ * dollars that the line covers this checkout's Pay in 4 plan, interest included. The amount is computed from the
+ * session's price, PolarisCheckout's quote and the vault's multiplier as ScoreManager applies it, rounded up to whole
+ * dollars with one to spare. One Face ID confirm (the virtual authenticator); then lockedOf, the dollar balance and
+ * the line are read back from the chain. Returns whether the line now covers the plan.
+ */
+async function boostForPlan(app, sessionId) {
+  const buyer = await buyerAddress(app, privateKeyToAccount);
+  const session = sessionId ? ((await (await fetch(`${BUSINESS}/api/public/sessions/${sessionId}`)).json().catch(() => null))?.data ?? null) : null;
+  const terms = session?.payIn4 ?? null;
+  if (!buyer || !terms || !CONTRACTS.CollateralVault) {
+    skip("Boost: the buyer locked dollars with one Face ID; the line rose on chain", !buyer ? "no buyer account" : !terms ? `no Pay in 4 terms for ${sessionId}` : "no CollateralVault in this run");
+    return false;
+  }
+  const before = await boostState(buyer);
+  const quote = await quoteFor(buyer, terms);
+  const need = quote.activeDebt + quote.totalOwed;
+  const short = need > quote.creditLimit ? need - quote.creditLimit : 0n;
+  const bps = BigInt(before.securedOnly ? Math.min(before.multiplierBps, 10_000) : before.multiplierBps);
+  const exact = (short * 10_000n + bps - 1n) / bps;
+  const amount = ((exact + 999_999n) / 1_000_000n + 1n) * 1_000_000n;
+  console.log(
+    `  boost: plan ${dollars(quote.totalOwed)} owed (${dollars(BigInt(terms.principalUnits))} + ${dollars(quote.interest)} interest), line ${dollars(quote.creditLimit)}, ` +
+      `multiplier ${before.multiplierBps / 100}%${before.securedOnly ? " (secured only: face value)" : ""}, balance ${dollars(before.balance)} -> lock ${dollars(amount)}`,
+  );
+  if (amount > before.balance) {
+    skip("Boost: the buyer locked dollars with one Face ID; the line rose on chain", `the plan needs ${dollars(amount)} in Boost; the buyer holds ${dollars(before.balance)}`);
+    return false;
+  }
+
+  await app.goto(APP + "/credit", { waitUntil: "networkidle", timeout: POPUP_MS });
+  await settle(app, 3000);
+  const entry = app.getByRole("button", { name: /Add to Boost/ }).filter({ visible: true });
+  await until("Add to Boost on the Credit page", async () => (await entry.count()) > 0, 60000, 500);
+  await entry.first().click();
+  const sheet = app.getByRole("dialog").filter({ hasText: "Lock dollars to raise your Pay later limit." }).last();
+  await sheet.waitFor({ timeout: 30000 });
+  // The keypad works once the balance is in ("Available $…"); then tap the digits.
+  await until("the balance in the Boost sheet", async () => /Available \$/.test(await sheet.innerText()), 60000, 500).catch(() => {});
+  const keypad = sheet.getByRole("group", { name: "Keypad" });
+  for (const digit of String(amount / 1_000_000n)) await keypad.getByRole("button", { name: digit, exact: true }).click();
+  await sleep(600);
+  await shot(app, "21-boost-1-sheet");
+  await sheet.getByRole("button", { name: "Add to Boost", exact: true }).click();
+  await confirmInPopup(app, "21-boost-2");
+  const shown = await until("Boosted.", async () => (await app.getByText("Boosted.").count()) > 0, 120000, 500).catch(() => false);
+  await sleep(1200);
+  await shot(app, "21-boost-3-boosted");
+  const screen = shown ? (await app.getByRole("dialog").last().innerText().catch(() => "")).replace(/\s+/g, " ") : "";
+
+  const after = await boostState(buyer);
+  const quoteAfter = await quoteFor(buyer, terms);
+  const lockedUp = after.locked - before.locked;
+  const balanceDown = before.balance - after.balance;
+  step(
+    `Boost: the buyer locked ${dollars(amount)} with one Face ID; the line rose to ${dollars(after.limit)} on chain`,
+    lockedUp === amount && balanceDown === amount && after.limit > before.limit && quoteAfter.withinLimit,
+    `lockedOf +${dollars(lockedUp)}, balance -${dollars(balanceDown)}, creditLimitOf ${dollars(before.limit)} -> ${dollars(after.limit)}; ` +
+      `the plan's ${dollars(quoteAfter.totalOwed)} ${quoteAfter.withinLimit ? "fits" : "does not fit"} (available ${dollars(quoteAfter.available)})`,
+  );
+  step(
+    "Boost: the Boosted. screen shows the new Boost and Pay later limit, read back from the chain",
+    Boolean(shown) && screen.includes(dollars(after.locked)) && screen.includes(dollars(after.limit)),
+    screen.slice(0, 200),
+  );
+  await app.keyboard.press("Escape").catch(() => {});
+  return quoteAfter.withinLimit;
+}
+
+/**
+ * Pay in 4 in the checkout popup, against a line that covers it: start, one Face ID, the receipt, the popup closing,
+ * the shop's order; then on chain, the plan (LoanCreated for this buyer) owed against the line and the merchant paid
+ * the full price by the pool (PolarisLoanEngine's own transfer, in the same transaction). Returns whether it opened.
+ */
+async function payIn4Plan(app, page, popup) {
+  const buyer = await buyerAddress(app, privateKeyToAccount);
+  const sessionId = (popup.url().match(/\/pay\/(cs_[A-Za-z0-9_]+)/) ?? [])[1] ?? null;
+  const fromBlock = await chain.getBlockNumber();
+  const debtBefore = buyer ? await read("PolarisLoanEngine", "activeDebtOf", [buyer]) : 0n;
+  const labels = await buttons(popup);
+  await shot(popup, "20-payin4-7-app-checkout-with-line");
+  // The checkout's Pay in 4 grid: "$87.25 × 4" (sheets/checkout.tsx; the desktop checkout says "4 × $87.25").
+  const fourShown = /(× 4|4 ×)/.test(await popup.locator("body").innerText().catch(() => ""));
+  await popup.getByRole("button", { name: labels.find((t) => /^(Pay in 4|Start Pay in 4)/.test(t)) }).first().click();
+  await confirmInPopup(popup, "20-payin4-8");
+  step("Pay in 4: the popup shows its receipt before closing", await receiptInPopup(popup, "20-payin4-8b-app-receipt"));
+  const closed = await until("the popup to close after Pay in 4", async () => popup.isClosed(), 90000, 300).catch(() => false);
+  if (!closed) await shot(popup, "20-payin4-9-popup-still-open");
+  step("Pay in 4: the popup posted its result and closed itself", Boolean(closed));
+  await until("the shop's order page", async () => page.url().includes("/orders/"), 60000, 300);
+  await until("the plan order to read as paid", async () => {
+    await page.reload({ waitUntil: "networkidle" });
+    return (await page.getByText(/Thank you|0 of 4 paid|Pay in 4/).count()) > 0;
+  }, 90000, 3000);
+  await settle(page, 1500);
+  await shot(page, "20-payin4-9-shop-order-plan");
+  step("Pay in 4: the shop's order is paid through a Polaris plan", true, page.url().replace(SHOP, ""));
+
+  // On chain: the plan against the line, the merchant paid in full from the pool.
+  const session = sessionId ? ((await (await fetch(`${BUSINESS}/api/public/sessions/${sessionId}`)).json().catch(() => null))?.data ?? null) : null;
+  const principal = session?.payIn4 ? BigInt(session.payIn4.principalUnits) : null;
+  const created = buyer
+    ? await chain
+        .getContractEvents({ address: CONTRACTS.PolarisLoanEngine, abi: abiOf("PolarisLoanEngine"), eventName: "LoanCreated", args: { borrower: buyer }, fromBlock, toBlock: "latest" })
+        .catch(() => [])
+    : [];
+  const loan = created.at(-1) ?? null;
+  let paidFromPool = null;
+  if (loan) {
+    const receipt = await chain.getTransactionReceipt({ hash: loan.transactionHash });
+    paidFromPool =
+      viem
+        .parseEventLogs({ abi: ERC20, logs: receipt.logs.filter((l) => viem.isAddressEqual(l.address, CONTRACTS.Stablecoin)), eventName: "Transfer" })
+        .find((t) => viem.isAddressEqual(t.args.from, CONTRACTS.PolarisLoanEngine) && viem.isAddressEqual(t.args.to, loan.args.merchant)) ?? null;
+  }
+  const [debtAfter, limit] = buyer ? await Promise.all([read("PolarisLoanEngine", "activeDebtOf", [buyer]), read("ScoreManager", "creditLimitOf", [buyer])]) : [0n, 0n];
+  const merchant = demo.merchant?.address ?? null;
+  step(
+    "Pay in 4: the checkout showed 4 instalments; the plan opened on chain against the buyer's line, and the pool paid the merchant the full price",
+    fourShown &&
+      Boolean(loan) &&
+      loan.args.principal === principal &&
+      Number(loan.args.installments) === 4 &&
+      (!merchant || viem.isAddressEqual(loan.args.merchant, merchant)) &&
+      debtAfter - debtBefore === loan.args.totalOwed &&
+      debtAfter <= limit &&
+      paidFromPool?.args.value === principal,
+    loan
+      ? `loan ${loan.args.loanId}: ${dollars(loan.args.totalOwed)} owed in 4 against a ${dollars(limit)} line (debt ${dollars(debtBefore)} -> ${dollars(debtAfter)}); ` +
+          `PolarisLoanEngine -> merchant ${paidFromPool ? dollars(paidFromPool.args.value) : "no transfer"} of ${principal === null ? "?" : dollars(principal)}`
+      : `no LoanCreated for ${buyer} since block ${fromBlock}`,
+  );
+  return true;
+}
+
 (async () => {
   const context = await open();
   let app = context.pages()[0] ?? (await context.newPage());
@@ -237,6 +408,9 @@ async function receiptInPopup(popup, name) {
   {
     const { page, popup } = await shopCheckout(context, { product: "halcyon-one", mode: "Pay now", prefix: "10-paynow" });
     payNowSession = (popup.url().match(/\/pay\/(cs_[A-Za-z0-9_]+)/) ?? [])[1] ?? null;
+    const payer = await buyerAddress(app, privateKeyToAccount);
+    const fromBlock = await chain.getBlockNumber();
+    const balanceBefore = payer ? await read("Stablecoin", "balanceOf", [payer]) : 0n;
     const pay = (await buttons(popup)).find((t) => /^Pay now/.test(t));
     await popup.getByRole("button", { name: pay }).first().click();
     await confirmInPopup(popup, "10-paynow-5");
@@ -252,6 +426,36 @@ async function receiptInPopup(popup, name) {
     await settle(page, 1500);
     await shot(page, "10-paynow-7-shop-order-paid");
     step("Pay now: the shop's order is paid", true, page.url().replace(SHOP, ""));
+    // On chain: PolarisPayments' PaymentMade for this buyer; the buyer's dollars down by the price, the merchant paid
+    // the price less PolarisPayments' fee in the same transaction, and the buyer still holds no MON (relayed).
+    const session = payNowSession ? ((await (await fetch(`${BUSINESS}/api/public/sessions/${payNowSession}`)).json().catch(() => null))?.data ?? null) : null;
+    const price = session ? BigInt(session.amountCents) * 10_000n : null;
+    const made = payer
+      ? ((await chain
+          .getContractEvents({ address: CONTRACTS.PolarisPayments, abi: abiOf("PolarisPayments"), eventName: "PaymentMade", args: { payer }, fromBlock, toBlock: "latest" })
+          .catch(() => [])).at(-1) ?? null)
+      : null;
+    let toMerchant = null;
+    if (made) {
+      const receipt = await chain.getTransactionReceipt({ hash: made.transactionHash });
+      toMerchant =
+        viem
+          .parseEventLogs({ abi: ERC20, logs: receipt.logs.filter((l) => viem.isAddressEqual(l.address, CONTRACTS.Stablecoin)), eventName: "Transfer" })
+          .find((t) => viem.isAddressEqual(t.args.to, made.args.merchant)) ?? null;
+    }
+    const [balanceAfter, mon] = payer ? await Promise.all([read("Stablecoin", "balanceOf", [payer]), chain.getBalance({ address: payer })]) : [0n, 0n];
+    step(
+      "Pay now: on chain, the buyer's dollars went down by the price, the merchant got it less the 0.5% fee, and the buyer holds no MON",
+      Boolean(made) &&
+        made.args.amount === price &&
+        balanceBefore - balanceAfter === price &&
+        made.args.fee === (price * 50n) / 10_000n &&
+        toMerchant?.args.value === price - made.args.fee &&
+        mon === 0n,
+      made
+        ? `buyer -${dollars(balanceBefore - balanceAfter)} of ${price === null ? "?" : dollars(price)}; merchant +${toMerchant ? dollars(toMerchant.args.value) : "nothing"}, fee ${dollars(made.args.fee)}; buyer ${mon} wei of MON`
+        : `no PaymentMade for ${payer} since block ${fromBlock}`,
+    );
     await page.close();
   }
 
@@ -338,15 +542,18 @@ async function receiptInPopup(popup, name) {
     step("Receipts: the app shows the receipt locked, and Face ID opens it to the line items only the buyer can read", wasLocked && opened && sealedLine);
   }
 
-  // ── Pay in 4, with a credit line from the CRE workflow ────────────────
+  // ── Pay in 4, with a credit line: from the CRE workflow, or else from Boost ──
   // The underwriting review reads Nansen, Zerion and Etherscan live, with the keys the CRE trigger has
   // (workflows/.env), or not at all: a review that needs a provider without its key opens no line and says which
-  // key is missing. Then nothing here may open a plan: the plan's steps are reported as not run, with that reason.
+  // key is missing. Then the buyer does what the app offers without those keys: Add to Boost (dollars locked in
+  // CollateralVault raise the line), and Pay in 4 runs against that line. Without a line either way, the plan's
+  // steps are reported as not run, with the reason.
   let planOpened = false;
   let noLineBecause = "";
   {
     const { page, popup } = await shopCheckout(context, { product: "halcyon-one", mode: "Pay in 4", prefix: "20-payin4" });
-    let labels = await buttons(popup);
+    const sessionId = (popup.url().match(/\/pay\/(cs_[A-Za-z0-9_]+)/) ?? [])[1] ?? null;
+    const labels = await buttons(popup);
     console.log("  pay in 4 popup buttons:", JSON.stringify(labels));
     // A new buyer has no line yet: Pay in 4 opens "Raise your limit" first.
     await popup.getByRole("button", { name: labels.find((t) => /^Pay in 4/.test(t)) }).first().click();
@@ -376,31 +583,38 @@ async function receiptInPopup(popup, name) {
       if (up) await until("the checkout to read the new line", async () => (await popup.getByText(/This plan needs .* of limit/).count()) === 0, 90000, 1000).catch(() => {});
     }
     if (up) {
-      labels = await buttons(popup);
-      const start = labels.find((t) => /^Pay in 4/.test(t));
-      await shot(popup, "20-payin4-7-app-checkout-with-line");
-      await popup.getByRole("button", { name: start }).first().click();
-      await confirmInPopup(popup, "20-payin4-8");
-      step("Pay in 4: the popup shows its receipt before closing", await receiptInPopup(popup, "20-payin4-8b-app-receipt"));
-      const closed = await until("the popup to close after Pay in 4", async () => popup.isClosed(), 90000, 300).catch(() => false);
-      if (!closed) await shot(popup, "20-payin4-9-popup-still-open");
-      step("Pay in 4: the popup posted its result and closed itself", Boolean(closed));
-      await until("the shop's order page", async () => page.url().includes("/orders/"), 60000, 300);
-      await until("the plan order to read as paid", async () => {
-        await page.reload({ waitUntil: "networkidle" });
-        return (await page.getByText(/Thank you|0 of 4 paid|Pay in 4/).count()) > 0;
-      }, 90000, 3000);
-      await settle(page, 1500);
-      await shot(page, "20-payin4-9-shop-order-plan");
-      step("Pay in 4: the shop's order is paid through a Polaris plan", true, page.url().replace(SHOP, ""));
-      planOpened = true;
+      planOpened = await payIn4Plan(app, page, popup);
+      await page.close();
     } else {
-      for (const name of ["Pay in 4: the popup shows its receipt before closing", "Pay in 4: the popup posted its result and closed itself", "Pay in 4: the shop's order is paid through a Polaris plan"]) {
+      // No line from the review: this checkout is left unpaid (the shop's order stays open), and the buyer boosts.
+      await popup.close().catch(() => {});
+      await page.close();
+      const covered = await boostForPlan(app, sessionId);
+      if (covered) {
+        // Boost took most of the buyer's dollars, and the plan's instalments (a minute apart with DEMO_FAST_PLANS),
+        // the subscription and the dashboard link still draw on the account: add $500 more, as the app offers.
+        await app.goto(APP + "/add", { waitUntil: "networkidle", timeout: 120000 });
+        await settle(app, 1500);
+        await app.getByText("Get $500 test dollars").first().click();
+        await sleep(3500);
+        console.log(`  added $500 test dollars after Boost: balance ${dollars(await read("Stablecoin", "balanceOf", [await buyerAddress(app, privateKeyToAccount)]))}`);
+        const again = await shopCheckout(context, { product: "halcyon-one", mode: "Pay in 4", prefix: "22-payin4-boosted" });
+        planOpened = await payIn4Plan(app, again.page, again.popup);
+        await again.page.close();
+      } else {
+        noLineBecause = `${noLineBecause}; Boost did not cover the plan`;
+      }
+    }
+    if (!planOpened) {
+      for (const name of [
+        "Pay in 4: the popup shows its receipt before closing",
+        "Pay in 4: the popup posted its result and closed itself",
+        "Pay in 4: the shop's order is paid through a Polaris plan",
+        "Pay in 4: the checkout showed 4 instalments; the plan opened on chain against the buyer's line, and the pool paid the merchant the full price",
+      ]) {
         skip(name, `no credit line: ${noLineBecause}`);
       }
-      await popup.close().catch(() => {});
     }
-    await page.close();
   }
 
   // ── A new buyer on a fresh phone: Pay in 4 creates the account and runs the review in one tap ──
