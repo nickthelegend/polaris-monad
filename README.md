@@ -215,9 +215,10 @@ Activity's Your splits).
 
 On their own, without `NEXT_PUBLIC_POLARIS_API_URL`, the app is an offline
 demo and says so on every screen ("Demo mode · sample data, nothing is on
-chain"); the dashboard has a development-only sample session
-(`POLARIS_DEV_MOCK_SESSION=1`); and the shop uses its own labelled dev mock of
-the API. Each app's README lists its environment.
+chain"); the dashboard has no sign-in until Privy is configured (its setup
+screen says what to set; `pnpm demo:local` signs in its seeded merchant
+instead); and the shop uses its own labelled dev mock of the API. Each app's
+README lists its environment.
 
 ### Deploy it
 
@@ -248,7 +249,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 | Indexer client | `pnpm --filter @polarispay/indexer-client test` | 56 passing |
 | Envio indexer (the Windows-runnable part) | `node packages/indexer/scripts/generate.mjs --check`; `bun test test/lib.test.ts` in `packages/indexer` | config and schema in sync; 22 passing (codegen and the handler tests run in WSL or CI: `packages/indexer/scripts/wsl.sh test`) |
 | CRE workflows | `pnpm --filter @polaris/cre-workflows test`, `typecheck`, `build` (WASM; needs the CRE CLI: `cre:install`, or `CRE_BIN`) | 209 passing; all three workflows compile to WASM |
-| Polaris for Business | `pnpm --filter @polaris/business test`, `typecheck`, `lint`, `build` | 276 passing (12 for sealed receipts); the API auth check covers every route |
+| Polaris for Business | `pnpm --filter @polaris/business test`, `typecheck`, `lint`, `build` | 279 passing (12 for sealed receipts); the API auth check covers every route |
 | The Polaris app | `pnpm --filter @polaris/app test`, `typecheck`, `lint`, `check:signatures`, `build` | 47 passing (the Chainlink states, a credit line's provenance, the dollar it signs for, split plans and links, the Android app's `/.well-known/assetlinks.json`, what a build reports to the deploy check, receipt keys beside an unmoved wallet key); 53 signature checks against the Solidity typehashes |
 | Halcyon | `pnpm --filter @polaris/shop test`, `typecheck`, `lint`, `build` | 101 passing; the build proves no dev mock ships |
 | Landing | `pnpm --filter @polaris/landing typecheck`, `build` | builds |

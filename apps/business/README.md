@@ -30,7 +30,6 @@ the Privy details are in [`docs/research/privy.md`](../../docs/research/privy.md
 ```bash
 pnpm install
 pnpm --filter @polaris/business dev                       # http://localhost:3100
-POLARIS_DEV_MOCK_SESSION=1 pnpm --filter @polaris/business dev   # the dashboard as a mock merchant, for screenshots
 pnpm --filter @polaris/business e2e:local                 # the whole backend on a local chain (below)
 ```
 
@@ -50,7 +49,7 @@ is unavailable) and every dashboard route answers 503. The landing page and
 | `/dashboard/links` | Payment links: create (dialog), share with a QR code, turn off. |
 | `/dashboard/plans` | The Pay in 4 ledger with instalment ticks; rows open a plan drawer. |
 | `/dashboard/payouts` | The balance card, one-tap withdraw (review, confirm, receipt), automatic daily payouts with **Pay out now**, history. |
-| `/dashboard/chainlink` | The three Chainlink CRE workflows as they run (More > Chainlink, and the Overview's collections card): the risk guard's verdict, its checks against the thresholds and how old its last check is; the pool-health feed (`GuardianReceiver.latestRoundData`, "computed by CRE"); each workflow's triggers and latest reports on Monad, each with its transaction and what it did; how reports reach the receivers. Labelled sample data on a server with nothing deployed. |
+| `/dashboard/chainlink` | The three Chainlink CRE workflows as they run (More > Chainlink, and the Overview's collections card): the risk guard's verdict, its checks against the thresholds and how old its last check is; the pool-health feed (`GuardianReceiver.latestRoundData`, "computed by CRE"); each workflow's triggers and latest reports on Monad, each with its transaction and what it did; how reports reach the receivers. On a server with nothing deployed it says so, and shows nothing else. |
 | `/dashboard/developers` | The integration (merchant ID, `baseUrl`, registration), API keys, webhooks with a test event and the delivery log (attempts, **Retry now**), the SDK snippet, the demo shop. |
 | `/gallery` | Every `@polaris/ui` component, beside the reference it reproduces. |
 
@@ -110,20 +109,22 @@ real session it is implemented over this server's routes (`http.ts`).
   say so and it is retried every 10 seconds (it has its own rate-limit
   bucket). Withdraw is also disabled on a $0.00 balance, and without a
   payout address its lime button chooses one.
-- **Sample data is always labelled.** A server with no chain gives new
-  merchants a sample book (`MerchantRecord.sample`, surfaced as
-  `Merchant.sample`); a merchant can also choose **Preview with sample data**
-  (account menu, this browser only, nothing can be paid out). Either way every
-  card that shows it carries a **Sample** chip, and each record of a server's
-  sample book carries `sample: true`, so its row does too where it sits
-  beside the merchant's own (a sample link can't be shared or turned off:
-  409 `sample_data`). Sample is a live condition: once the server has a
-  chain, the next request clears the flag and the sample withdrawals.
+- **No invented data.** Everything on the dashboard comes from the API, which
+  reads the chain. With no chain configured, a merchant's book is empty and
+  the money controls say the server isn't connected to Monad; an empty page
+  says what to do next ("Your dashboard fills in as payments settle", "No
+  payments yet"). A merchant record that an older build seeded with a sample
+  book (`MerchantRecord.sample`) is cleared on its next request, with the
+  withdrawals recorded against it.
 - **The sponsor panels** read typed functions in `src/lib/data/insights.ts`:
   `getCollectionsRun` shows the Chainlink CRE workflow's real heartbeat
-  (`Overview.collector`) once it reports; `getIndexedEvents` (Envio) and
-  `getUnderwritingReasons` (Nansen) show "not connected" for a live merchant
-  and clearly named `placeholder*` data when sample data is on.
+  (`Overview.collector`) once it reports, and "No collections run yet"
+  before; `getIndexedEvents` (Envio) shows "Indexer not configured" without
+  `POLARIS_INDEXER_URL` (or this server's chain sync, labelled, when it has
+  events) and "The indexer didn't answer" when it is down;
+  `getUnderwritingReasons` (Nansen) says nothing has reported until a CRE
+  underwriting decision exists. The Chainlink page says "Nothing is deployed
+  on this server yet" without a deployment.
 - **Sessions end cleanly.** A 401 from any request signs out, says "Your
   session ended. Sign in again." and goes to `/login?next=<the page>`; a
   refresh that fails while older data is on screen shows its age and Retry;
@@ -131,13 +132,11 @@ real session it is implemented over this server's routes (`http.ts`).
 
 ### Sign-in modes
 
-There are three, and only the first exists in a production build:
+There are two, and only the first exists in a production build:
 
 1. **Privy** (`NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET`): the real one.
    The server verifies Privy's access token on every dashboard route.
-2. **The development mock session** (`POLARIS_DEV_MOCK_SESSION`), below: a
-   mock merchant in the browser, for screenshots; it never calls the API.
-3. **The demo:local session** (`POLARIS_LOCAL_SESSION_TOKEN` and `_WALLET`
+2. **The demo:local session** (`POLARIS_LOCAL_SESSION_TOKEN` and `_WALLET`
    on the server, `NEXT_PUBLIC_POLARIS_LOCAL_SESSION`, `_WALLET` and `_KEY`
    in the browser), which `pnpm demo:local` sets: the real API, signed in as
    the seeded merchant with a random token. The server accepts it only
@@ -145,13 +144,6 @@ There are three, and only the first exists in a production build:
    `POLARIS_DISABLE_PRIVY=1` (`src/server/env.ts` `localSessionFrom` throws
    otherwise), and `next.config.ts` blanks the public variables outside
    `next dev`.
-
-**The development mock session** (`POLARIS_DEV_MOCK_SESSION=1`, or `=empty` for
-a merchant who has just signed up) serves every read and write from sample data
-in the browser and simulates the signing flows, for screenshots. It never calls
-the API. It exists only when `NODE_ENV` is `development`: `next.config.ts`
-blanks the variable in every other build and every check also tests
-`NODE_ENV`, so the production bundles don't contain it.
 
 ## Web app code map
 
@@ -161,11 +153,11 @@ src/app/(privy)/login             sign in, name the business, register it on Mon
 src/app/(privy)/dashboard/*       the pages (overview, payments, links, plans, payouts, developers, settings), behind the gate in dashboard/layout.tsx
 src/app/(privy)/layout.tsx        Privy (AuthProvider) and the data source: only this group mounts them
 src/app/gallery, not-found.tsx    no Privy
-src/components/auth               Privy, the unconfigured state and the dev-only mock, behind one AuthContext
+src/components/auth               Privy, the unconfigured state and the demo:local session, behind one AuthContext
 src/components/shell              ref E's frame and top nav (More: Developers, Settings), the wallet pill and the account menu
 src/components/dashboard          the money widget (WITHDRAW / REQUEST), PageHead and FigureRow, panels, status pills, the registration banner
 src/components/landing            the landing's sections, its frame and nav, and the live product preview (preview.tsx)
-src/lib/data                      DashboardData, types, formatting, sample data, insights.ts
+src/lib/data                      DashboardData, types, formatting, analytics, insights.ts
 src/lib/payouts.ts                useWithdraw, useAutoPayouts, useRegisterMerchant
 src/lib/features.ts               readiness: which money controls work, and why not
 ```
@@ -190,7 +182,7 @@ Other commands (`pnpm --filter @polaris/business <cmd>`):
 | Command | What it does |
 |---|---|
 | `dev` | The landing, dashboard and API on http://localhost:3100 |
-| `test` | 123 unit and route tests (vitest, on SQLite in memory): validation, auth, idempotency, the relayer's policy and signature checks, chain ingestion, webhook signing and retries, payouts, onboarding, the web audit's fixes (link turn-off, JSON 404/405, field errors, checksums, the write limit) and the web review's (sample ending with the chain, subscribe links, the active-link cap, registration catching up, health, malformed cookies, `next`) |
+| `test` | 279 unit and route tests (vitest, on SQLite in memory): validation, auth, idempotency, the relayer's policy and signature checks, chain ingestion, webhook signing and retries, payouts, onboarding, the web audit's fixes (link turn-off, JSON 404/405, field errors, checksums, the write limit) and the web review's (an empty book without a chain, subscribe links, the active-link cap, registration catching up, health, malformed cookies, `next`) |
 | `lint` | ESLint, then `scripts/check-api-auth.mjs`: every route must be exported through the authentication its path requires |
 | `typecheck`, `build` | `tsc --noEmit`; `next build` |
 | `dev:merchant` | Create a local merchant with `sk_test_`/`pk_test_` keys (and a webhook endpoint) without Privy |
@@ -539,7 +531,6 @@ See [`.env.example`](.env.example) for every variable. The essentials:
 | `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET` | Sign-in; the dashboard routes answer 503 without them |
 | `NEXT_PUBLIC_PRIVY_PAYOUT_SIGNER_ID` | The payout signer the browser adds for automatic payouts |
 | `NEXT_PUBLIC_DEMO_SHOP_URL` | "See the demo shop" (`http://127.0.0.1:3600` in development, when it answers; disabled in production without it) |
-| `POLARIS_DEV_MOCK_SESSION` | `next dev` only: the mock merchant for screenshots |
 | `POLARIS_DEPLOYMENT` / `POLARIS_DEPLOYMENT_FILE`, `POLARIS_RPC_URL` | Which contracts, which RPC |
 | `RELAYER_MODE` (+ `PRIVY_RELAYER_*`) | `privy` in production, `local` on a Hardhat node, `off` |
 | `POLARIS_KEY_PEPPER` | Required in production |
@@ -591,5 +582,6 @@ Background work runs in-process (`POLARIS_WORKERS`, default on outside
 production; turn it on in production on a long-lived host), or from a
 scheduler calling `POST /api/cron/tick` with `CRON_SECRET`.
 
-Without a deployment record the dashboard still runs: new merchants see a
-sample book, labelled as such, and nothing is relayed.
+Without a deployment record the dashboard still runs: a merchant's book is
+empty, the money controls say the server isn't connected to Monad, and
+nothing is relayed.
