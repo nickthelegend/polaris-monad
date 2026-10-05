@@ -287,7 +287,7 @@ async function checkApp(ctx) {
     if (devSwitches.length === 0) r.pass("dev-signer", "No dev signer, no local demo switches: accounts are Face ID (and email, when Privy is set).");
     else r.fail("dev-signer", `Built with ${devSwitches.join(", ")} on. Unset NEXT_PUBLIC_DEV_SIGNER, NEXT_PUBLIC_DEV_SIGNER_PERSIST, NEXT_PUBLIC_LOCAL_DEMO and NEXT_PUBLIC_LOCAL_FAUCET_URL and rebuild.`);
 
-    if (!info.apiUrl) r.fail("api-url", "NEXT_PUBLIC_POLARIS_API_URL is unset: the app is the offline demo. Set it to Polaris for Business and rebuild.");
+    if (!info.apiUrl) r.fail("api-url", "NEXT_PUBLIC_POLARIS_API_URL is unset: the app only says Polaris isn't configured on this build and signs nothing. Set it to Polaris for Business and rebuild.");
     else if (same(new URL(info.apiUrl).origin, urls.business)) r.pass("api-url", `Talks to Polaris for Business at ${urls.business}.`);
     else r.fail("api-url", `NEXT_PUBLIC_POLARIS_API_URL is ${info.apiUrl}, not ${urls.business}.`);
 
