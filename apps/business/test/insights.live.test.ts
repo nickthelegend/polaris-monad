@@ -36,7 +36,7 @@ const WEBHOOK_KINDS = [
 describe.skipIf(!URL || !MERCHANT)("the Envio panel, read from a live indexer", () => {
   it("shows the merchant's indexed events and the indexer's progress", async () => {
     setupServer({ POLARIS_INDEXER_URL: URL as string });
-    const insights = await merchantInsights({ wallet: MERCHANT as `0x${string}`, sample: false, payments: [], plans: [] });
+    const insights = await merchantInsights({ wallet: MERCHANT as `0x${string}`, payments: [], plans: [] });
     const indexer = insights?.indexer;
     expect(indexer?.source).toBe("envio");
     if (indexer?.source !== "envio") return;
@@ -51,7 +51,7 @@ describe.skipIf(!URL || !MERCHANT)("the Envio panel, read from a live indexer", 
     const blocks = indexer.events.map((e) => e.block);
     expect(blocks).toEqual([...blocks].sort((a, b) => b - a));
 
-    const feed = getIndexedEvents({ sample: false, payments: [], plans: [], insights });
+    const feed = getIndexedEvents({ insights });
     expect(feed.source).toBe("live");
   });
 });
