@@ -33,6 +33,13 @@ export type Balance = {
   updatedAt: number;
 };
 
+/** Boost: dollars the account locked in CollateralVault, which ScoreManager adds to its Pay later limit. */
+export type Boost = {
+  /** `CollateralVault.lockedOf(owner)`, base units (6 decimals). */
+  locked: Micros;
+  updatedAt: number;
+};
+
 export type CreditReason = {
   /** Plain language, e.g. "3 instalments paid on time". */
   label: string;
@@ -310,6 +317,8 @@ export interface PolarisData {
   getProfile(owner: Address | null): Promise<Profile>;
   getBalance(owner: Address | null): Promise<Balance>;
   getCreditLine(owner: Address | null): Promise<CreditLine>;
+  /** What the account has locked in Boost; null when the network has no CollateralVault (the app then shows no Boost). */
+  getBoost(owner: Address | null): Promise<Boost | null>;
   /** The risk guard now; null when there is none to show. */
   getCreditGuard(): Promise<CreditGuardView | null>;
   getPlans(owner: Address | null): Promise<{ plans: Plan[]; subscriptions: Subscription[] }>;

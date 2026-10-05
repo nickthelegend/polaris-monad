@@ -17,17 +17,22 @@ export type Network = {
   explorerUrl: string;
   contracts: Record<ContractName, Address>;
   domains: Record<ContractName, Eip712Domain>;
+  /**
+   * CollateralVault, where Boost's dollars are locked (read only: the app
+   * shows what is locked). Null where the deployment has none.
+   */
+  vault: Address | null;
 };
 
 type Remote = {
   chainId: number;
   explorerUrl: string;
   /** `split` is null (or absent, from an older API) where PolarisSplit isn't deployed. */
-  contracts: { stablecoin: Address; payments: Address; checkout: Address; send: Address; split?: Address | null; loanEngine: Address };
+  contracts: { stablecoin: Address; payments: Address; checkout: Address; send: Address; split?: Address | null; loanEngine: Address; vault?: Address | null };
   domains: { stablecoin: Eip712Domain; payments: Eip712Domain; checkout: Eip712Domain; send: Eip712Domain; split?: Eip712Domain | null; loanEngine: Eip712Domain };
 };
 
-const REMOTE_NAME: Record<ContractName, keyof Remote["contracts"]> = {
+const REMOTE_NAME: Record<ContractName, Exclude<keyof Remote["contracts"], "vault">> = {
   ausd: "stablecoin",
   payments: "payments",
   checkout: "checkout",
@@ -66,7 +71,8 @@ async function load(): Promise<Network> {
     domains[name] = { ...(remote.domains[REMOTE_NAME[name]] as Eip712Domain), verifyingContract: reported };
   }
   if (remote.chainId !== env.chainId) throw new Error(`Polaris runs on chain ${remote.chainId}; this app is built for ${env.chainId}.`);
-  return { chainId: remote.chainId, explorerUrl: remote.explorerUrl, contracts, domains };
+  const vault = remote.contracts.vault && remote.contracts.vault !== zeroAddress ? getAddress(remote.contracts.vault) : null;
+  return { chainId: remote.chainId, explorerUrl: remote.explorerUrl, contracts, domains, vault };
 }
 
 /** The relayer's network, or null when this build has no Polaris API (and so can't sign). */
