@@ -52,8 +52,15 @@ Each task: objective · acceptance · verify · status.
   `NEXT_PUBLIC_POLARIS_API_URL` the app shows an honest "not configured"
   screen. · Acceptance: no import of mock data outside tests; a build without
   the API shows the not-configured state; app tests green. · Verify: grep,
-  `pnpm --filter @polaris/app test typecheck lint`, browser. · NOT STARTED
-  (waits for the UI polish session's `apps/app` branch).
+  `pnpm --filter @polaris/app test typecheck lint`, browser. · DONE (6 Oct):
+  the offline demo, stub relayer, placeholder domains and "Sample" pills are
+  gone; without the API every route shows "Polaris isn't configured on this
+  build" and nothing can be signed; `/gallery` is development only; 65 tests
+  (incl. `test/zero-mock.test.ts`). Follow-up P1.7.
+- **P1.7 Boost and account digits.** `components/accounts.tsx` had invented
+  card digits ("0095", "1122") and a Boost balance fixed at 0: read the
+  buyer's real collateral from `CollateralVault`, derive the digits. · IN
+  PROGRESS
 - **P1.2 Business without the dev mock session.** Remove
   `POLARIS_DEV_MOCK_SESSION`, `components/auth/mock-auth.tsx`,
   `lib/data/sample.ts`, `chainlink-sample.ts` and the `placeholder` branches
