@@ -63,8 +63,13 @@ Each task: objective · acceptance · verify · status.
 - **P1.3 Shop without the dev mock API.** Remove `apps/shop/src/lib/dev-polaris`,
   the `route.dev.ts`/`page.dev.tsx` routes, `HALCYON_DEV_MOCK`, the dev
   drawer; without Polaris keys the shop says payments are not configured. ·
-  Acceptance: shop pays only through Polaris for Business; tests green. · IN
-  PROGRESS
+  Acceptance: shop pays only through Polaris for Business; tests green. ·
+  DONE (6 Oct): the mock API, its routes and `HALCYON_DEV_MOCK` are gone;
+  unconfigured → "Payments aren't configured" (checkout page, 503 from
+  `/api/checkout`, `/api/health` says why); the build fails if it serves any
+  API route beyond the shop's five (`apps/shop/scripts/assert-api-routes.mjs`);
+  96 tests. The "Built with Polaris" drawer stays: it shows the real SDK
+  calls and webhooks
 - **P1.4 Underwriting without fixture evidence in the product.** Missing
   `NANSEN_API_KEY`/`ZERION_API_KEY` → the provider is "not configured", never
   synthesized data; "Raise your limit" says reviews need the named key;
@@ -154,7 +159,7 @@ evidence: 730 lines. The product-path gaps:
 | G14 | `workflows` CRE report gas estimate undershoots on the fork | A report can land "not processed" | P2 | Measure on testnet (read-only) | P7 |
 
 The other hits are tooling and tests: deploy and e2e scripts, the contracts'
-own `Mock*.sol` for unit tests, `assert-no-dev-mock.mjs` (a guard),
+own `Mock*.sol` for unit tests, `assert-api-routes.mjs` (a build guard),
 `provenance.ts` (names Chainlink's MockKeystoneForwarder for what it is).
 
 ## 5. Completion
