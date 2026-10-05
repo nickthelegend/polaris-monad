@@ -88,6 +88,12 @@ export type ChainConfig = {
   minIntervalSeconds: number;
   minPeriodSeconds: number;
   feeBps: number;
+  /**
+   * A chain on this machine: a Hardhat node (31337 or 1337), or `pnpm
+   * demo:local`'s anvil fork of Monad testnet (chain 10143 with
+   * POLARIS_LOCAL_FORK=1 and an RPC on loopback). The raw-key relayer, the
+   * local registry activator and the local dashboard session need it.
+   */
   local: boolean;
   /** The first block with a Polaris contract in it (the deployment's), where per-address history starts. */
   fromBlock?: number | null;
@@ -305,22 +311,35 @@ function deployedFrom(d: Deployment): number | null {
   return blocks.length ? Math.min(...blocks) : null;
 }
 
+/** An RPC URL on this machine (loopback), where nothing sent can reach a public chain. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    return ["127.0.0.1", "localhost", "[::1]", "::1"].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function chainFrom(d: Deployment): ChainConfig {
   const id = d.chainId;
   const stable = d.eip712?.Stablecoin?.domain;
+  const rpcUrl = env("POLARIS_RPC_URL") ?? DEFAULT_RPC[id] ?? "";
+  // demo:local's fork of Monad testnet: testnet's chain id and contracts, on a node on this machine.
+  const fork = flag("POLARIS_LOCAL_FORK") && id !== 143 && isLoopbackUrl(rpcUrl);
   return {
     id,
-    name: CHAIN_NAME[id] ?? `Chain ${id}`,
-    rpcUrl: env("POLARIS_RPC_URL") ?? DEFAULT_RPC[id] ?? "",
+    name: fork ? `${CHAIN_NAME[id] ?? `Chain ${id}`} (local fork)` : (CHAIN_NAME[id] ?? `Chain ${id}`),
+    rpcUrl,
     logsRpcUrl: env("POLARIS_LOGS_RPC_URL") ?? null,
-    explorerUrl: (env("POLARIS_EXPLORER_URL") ?? DEFAULT_EXPLORER[id] ?? "").replace(/\/+$/, ""),
+    // A fork's transactions exist only on this machine: no explorer link.
+    explorerUrl: (env("POLARIS_EXPLORER_URL") ?? (fork ? "" : DEFAULT_EXPLORER[id]) ?? "").replace(/\/+$/, ""),
     contracts: contractsFrom(d),
     cre: d.cre ?? null,
     stablecoinDomain: { name: stable?.name ?? "Agora Dollar", version: stable?.version ?? "1" },
     minIntervalSeconds: d.config?.minInterval ?? 3600,
     minPeriodSeconds: d.config?.minPeriod ?? 3600,
     feeBps: d.config?.feeBps ?? 50,
-    local: id === 31337 || id === 1337,
+    local: id === 31337 || id === 1337 || fork,
     fromBlock: deployedFrom(d),
   };
 }

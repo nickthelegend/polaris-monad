@@ -7,7 +7,7 @@ import { polarisSendAbi, polarisSplitAbi } from "./chain/abis";
 import { logsClient, publicClient, requireChain } from "./chain/client";
 import { getDb } from "./db";
 import type { ChainConfig } from "./env";
-import { chunkSize } from "./ingest/sync";
+import { chunkSize, configuredFromBlock } from "./ingest/sync";
 
 /**
  * Every dollar that moved in or out of one address, from the chain: what the
@@ -212,9 +212,7 @@ export function syncWalletMoves(address: Address): Promise<void> {
     const chain = requireChain();
     const db = getDb();
     const latest = Number(await publicClient().getBlockNumber());
-    const configured = Number(process.env.POLARIS_SYNC_FROM_BLOCK ?? "");
-    const start =
-      Number.isInteger(configured) && configured >= 0 ? configured : (chain.fromBlock ?? (chain.local ? 0 : Math.max(0, latest - 10_000)));
+    const start = configuredFromBlock() ?? chain.fromBlock ?? (chain.local ? 0 : Math.max(0, latest - 10_000));
     const cursor = await db.cursors.get(cursorId(who));
     const size = chunkSize(chain.id, chain.logsRpcUrl !== null);
     let from = cursor ? cursor.block + 1 : start;

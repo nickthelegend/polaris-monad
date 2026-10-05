@@ -3,7 +3,9 @@
 //
 //   PLAYWRIGHT_MODULE=<path to an installed playwright> node scripts/demo-e2e.cjs
 //
-// A buyer account (dev signer) with test dollars from the local faucet; Halcyon's
+// A buyer account (Face ID: on demo:local's fork, the app's own passkey ceremony with PRF on
+// Chrome's virtual authenticator, scripts/lib/virtual-authenticator.cjs; on its Hardhat stack, the
+// dev signer) with dollars from the local faucet; Halcyon's
 // bag -> Polaris checkout popup -> Pay now; that purchase's receipt sealed to the buyer's
 // Face ID key (the server holds only ciphertext) and opened in the app; Halcyon -> popup -> Raise your limit (the
 // CRE underwriting workflow, local trigger) -> Pay in 4; both shop orders marked paid
@@ -16,6 +18,7 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const fs = require("fs");
 const path = require("path");
+const { addAuthenticator, buyerAddress } = require("./lib/virtual-authenticator.cjs");
 
 // Where the running `pnpm demo:local` is: its .demo/demo.json (every URL, whatever DEMO_*_PORT
 // moved), else APP, SHOP, BUSINESS, RPC and FAUCET, else demo:local's default ports.
@@ -26,6 +29,9 @@ const SHOP = process.env.SHOP || demo.urls.shop || "http://127.0.0.1:3600";
 const BUSINESS = process.env.BUSINESS || demo.urls.business || "http://localhost:3100";
 const RPC = process.env.RPC || demo.urls.rpc || "http://127.0.0.1:8545";
 const FAUCET = process.env.FAUCET || (demo.urls.faucet ? demo.urls.faucet.replace(/\/mint$/, "") : "http://127.0.0.1:3650");
+// Hardhat mode's app signs with the dev signer; fork mode's with passkeys, so every browser profile gets an authenticator.
+const DEV_SIGNER = demo.devSigner !== false;
+const { privateKeyToAccount } = require(require.resolve("viem/accounts", { paths: [path.join(__dirname, "..", "apps", "business")] }));
 // A first `next dev` compile of the checkout can take a minute or more; demo:local warms it, but be patient.
 const POPUP_MS = 180000;
 const OUT = process.env.OUT || path.join(__dirname, "..", "docs", "demo");
@@ -43,6 +49,9 @@ async function open({ width = 1440, height = 900, profile = PROFILE } = {}) {
   context.setDefaultNavigationTimeout(180000);
   context.on("page", (p) => watch(p));
   for (const p of context.pages()) watch(p);
+  if (!DEV_SIGNER) {
+    context.authenticator = await addAuthenticator(context, { origin: new URL(APP).origin, log: (line) => console.log(`  [authenticator] ${line}`) });
+  }
   return context;
 }
 
@@ -72,8 +81,44 @@ async function buttons(page) {
 
 const results = [];
 function step(name, ok, detail = "") {
-  results.push({ name, ok, detail });
+  results.push({ name, ok: Boolean(ok), detail });
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  ${detail}` : ""}`);
+}
+/** A step this run could not reach, and why: reported, never counted as a pass. */
+function skip(name, why) {
+  results.push({ name, ok: null, detail: why });
+  console.log(`SKIP  ${name}  ${why}`);
+}
+
+/**
+ * "Raise your limit" after its tap: the line went up (or the review is still running), or the review ended with
+ * the sheet's error (e.g. a data provider that isn't set up). { up, message }.
+ */
+async function review(popup) {
+  const outcome = await until(
+    "the CRE review's outcome",
+    async () => {
+      if ((await popup.getByText(/Your limit went up|still running/).count()) > 0) return { up: true, message: "" };
+      const alert = popup.getByRole("alert").filter({ hasText: /\S/ });
+      if ((await alert.count()) > 0) {
+        await alert.first().scrollIntoViewIfNeeded().catch(() => {});
+        return { up: false, message: (await alert.first().innerText()).replace(/\s+/g, " ").trim() };
+      }
+      return null;
+    },
+    240000,
+    2000,
+  ).catch(() => ({ up: false, message: "" }));
+  if (outcome.up) await newLimitShown(popup);
+  else await sleep(800);
+  return outcome;
+}
+
+/** The account's credit limit on chain, in base units, as the API reads it (0 for none or no account). */
+async function creditLine(account) {
+  if (!account) return 0n;
+  const body = await (await fetch(`${BUSINESS}/api/public/credit/${account}`)).json().catch(() => null);
+  return BigInt(body?.data?.onChain?.creditLimitUnits ?? "0");
 }
 
 async function until(what, fn, timeoutMs = 60000, everyMs = 1000) {
@@ -118,10 +163,25 @@ async function shopCheckout(context, { product, mode, prefix }) {
 async function confirmInPopup(popup, prefix) {
   const dialog = popup.getByRole("dialog").last();
   const confirm = dialog.getByRole("button", { name: /Face ID/ }).first();
-  await confirm.waitFor({ timeout: 30000 });
+  await confirm.waitFor({ timeout: 30000 }).catch(async (error) => {
+    await shot(popup, `${prefix}-no-confirm`).catch(() => {});
+    throw error;
+  });
   await sleep(1200);
   await shot(popup, `${prefix}-app-confirm`);
   await confirm.click();
+}
+
+/**
+ * "Your limit went up" names the limit from the checkout's credit line, which the app re-reads once the decision
+ * lands: wait (up to a minute) for it to show more than $0, so the screenshot shows the line the chain holds.
+ */
+async function newLimitShown(popup) {
+  await until("the new limit in the sheet", async () => {
+    const text = await popup.getByRole("dialog").last().innerText();
+    return /is your Pay later limit now/.test(text) && !/(^|\n)\$0(\n|$)/.test(text);
+  }, 60000, 500).catch(() => {});
+  await sleep(500);
 }
 
 /** The receipt the popup shows before it closes itself (polarispay-sdk leaves it up). */
@@ -143,11 +203,20 @@ async function receiptInPopup(popup, name) {
     await app.getByRole("button", { name: "Create account with Face ID" }).click();
     await settle(app, 2500);
   }
-  const buyer = await app.evaluate(async () => {
-    const raw = localStorage.getItem("polaris.dev-signer.v1");
-    return raw ? JSON.parse(raw).privateKey.slice(0, 6) : null;
-  });
-  step("buyer account created with the dev signer (kept for the device)", Boolean(buyer));
+  const buyer = await until("the buyer's account", () => buyerAddress(app, privateKeyToAccount), 60000, 500).catch(() => null);
+  if (DEV_SIGNER) {
+    step("buyer account created with the dev signer (kept for the device)", Boolean(buyer), buyer ?? "");
+  } else {
+    // One passkey on the virtual authenticator, and the app's record of it names the account Mera derived from its PRF output.
+    const credentials = await context.authenticator.credentials();
+    const record = await app.evaluate(() => JSON.parse(localStorage.getItem("polaris.account.v1") || "null"));
+    const sameCredential = Boolean(record) && credentials.some((c) => c.credentialId.replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_") === record.credentialId);
+    step(
+      "buyer account created with Face ID: a passkey with PRF on Chrome's virtual authenticator, the account derived by Mera",
+      Boolean(buyer) && credentials.length === 1 && credentials[0].isResidentCredential && sameCredential,
+      `${buyer ?? "no account"}; ${credentials.length} passkey(s), rpId ${credentials[0]?.rpId ?? "-"}`,
+    );
+  }
   await app.goto(APP + "/add", { waitUntil: "networkidle", timeout: 120000 });
   await settle(app, 1500);
   await app.getByText("Get $500 test dollars").first().click();
@@ -188,16 +257,13 @@ async function receiptInPopup(popup, name) {
 
   // ── Receipts only you can read: what Pay now bought, sealed to the buyer's key ──
   {
-    const { privateKeyToAccount } = require(require.resolve("viem/accounts", { paths: [path.join(__dirname, "..", "apps", "business")] }));
-    const { receiptsReadMessage } = await import(require("url").pathToFileURL(path.join(__dirname, "..", "packages", "receipts", "src", "messages.ts")).href);
-    const key = await app.evaluate(() => JSON.parse(localStorage.getItem("polaris.dev-signer.v1") || "null")?.privateKey ?? null);
-    const account = key ? privateKeyToAccount(key) : null;
+    const address = await buyerAddress(app, privateKeyToAccount);
     // What the shop put in the bag (apps/shop: "<product>, <option>" line items); none of it may be on the server in the clear.
     const ITEM = /Halcyon One/;
     // The buyer book (what the app reads): which payment has a sealed receipt, never what is in it.
-    const book = account
+    const book = address
       ? await until("the Pay now receipt in the buyer book", async () => {
-          const body = (await (await fetch(`${BUSINESS}/api/public/buyers/${account.address}`)).json()).data;
+          const body = (await (await fetch(`${BUSINESS}/api/public/buyers/${address}`)).json()).data;
           return body?.receiptsInbox && body.receipts.some((r) => r.kind === "payment") ? body : null;
         }, 60000, 2000).catch(() => null)
       : null;
@@ -210,41 +276,74 @@ async function receiptInPopup(popup, name) {
       Boolean(session) && session.description === "Sealed for the buyer" && session.lineItems.length === 0 && !ITEM.test(JSON.stringify(session)),
       session ? `${payNowSession}: "${session.description}", ${session.lineItems.length} line items` : String(payNowSession),
     );
-    // The receipts themselves, as the app fetches them: signed by the account, and only ciphertext comes back.
-    let row = null;
-    let raw = "";
-    if (account && entry) {
-      const issuedAt = Math.floor(Date.now() / 1000);
-      const signature = await account.signMessage({ message: receiptsReadMessage(account.address, issuedAt) });
-      const res = await fetch(`${BUSINESS}/api/receipts`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ address: account.address, issuedAt, signature }) });
-      raw = await res.text();
-      row = (JSON.parse(raw).data?.receipts ?? []).find((r) => r.id === entry.id) ?? null;
-    }
-    step(
-      "Receipts: the server holds the receipt only as ciphertext (no item names in what it returns)",
-      Boolean(row) && /^0x[0-9a-f]{64}$/i.test(row.enc) && /^0x[0-9a-f]+$/i.test(row.ct) && row.ct.length > 200 && !ITEM.test(raw) && !/Halcyon order/.test(raw),
-      row ? `${(row.ct.length - 2) / 2} bytes of ciphertext` : "",
-    );
-    // The app: the payment's details show the receipt locked, and Face ID (the dev signer here) opens it.
+    // The app: the payment's details show the receipt locked, and Face ID opens it. What the server sends the app
+    // (the app's own signed POST /api/receipts, watched on the wire) must be ciphertext only.
+    const fetched = [];
+    const onResponse = async (res) => {
+      if (res.request().method() !== "POST" || !/\/api\/receipts$/.test(new URL(res.url()).pathname)) return;
+      const signed = (() => {
+        try {
+          return Boolean(JSON.parse(res.request().postData() || "{}").signature);
+        } catch {
+          return false;
+        }
+      })();
+      fetched.push({ status: res.status(), signed, text: await res.text().catch(() => "") });
+    };
+    app.on("response", onResponse);
+    let wasLocked = false;
+    let opened = false;
+    let sealedLine = false;
     if (entry) {
-      await app.goto(`${APP}/activity/pay-${encodeURIComponent(entry.id)}`, { waitUntil: "networkidle", timeout: 120000 });
+      await app.goto(`${APP}/activity/pay-${encodeURIComponent(entry.id)}`, { waitUntil: "networkidle", timeout: POPUP_MS });
       await settle(app, 2500);
       const openButton = app.getByRole("button", { name: "Open with Face ID" });
       const locked = await until("the locked receipt", async () => (await openButton.count()) > 0 || (await app.getByText(ITEM).count()) > 0, 60000, 500).catch(() => false);
-      const wasLocked = Boolean(locked) && (await openButton.count()) > 0;
+      wasLocked = Boolean(locked) && (await openButton.count()) > 0;
       if (wasLocked) {
         await shot(app, "15-receipt-1-app-locked");
         await openButton.first().click();
       }
-      const opened = await until("the opened receipt's line items", async () => (await app.getByText(ITEM).count()) > 0, 60000, 500).catch(() => false);
+      opened = Boolean(await until("the opened receipt's line items", async () => (await app.getByText(ITEM).count()) > 0, 60000, 500).catch(() => false));
       await sleep(800);
       await shot(app, "15-receipt-2-app-opened");
-      const sealedLine = (await app.getByText("Sealed to your Face ID. Only you can read it.").count()) > 0;
-      step("Receipts: the app shows the receipt locked, and Face ID opens it to the line items only the buyer can read", wasLocked && Boolean(opened) && sealedLine);
+      sealedLine = (await app.getByText("Sealed to your Face ID. Only you can read it.").count()) > 0;
     }
+    app.off("response", onResponse);
+    const answer = fetched.filter((f) => f.status === 200).pop() ?? null;
+    let row = null;
+    try {
+      row = answer ? ((JSON.parse(answer.text).data?.receipts ?? []).find((r) => r.id === entry?.id) ?? null) : null;
+    } catch {
+      row = null;
+    }
+    const problems = [];
+    if (!row) problems.push(`no row for ${entry?.id} in ${fetched.length} receipt fetches`);
+    else {
+      if (!answer.signed) problems.push("the app's request carried no signature");
+      // HPKE's encapsulated X25519 key and the AES-GCM ciphertext, base64url (packages/receipts sealReceipt).
+      const b64url = (x) => (typeof x === "string" && /^[A-Za-z0-9_-]+$/.test(x) ? Buffer.from(x, "base64url") : null);
+      if (b64url(row.enc)?.length !== 32) problems.push("enc is not a 32-byte key");
+      if (!((b64url(row.ct)?.length ?? 0) > 100)) problems.push("ct is not ciphertext");
+      for (const re of [ITEM, /Halcyon order/]) {
+        const m = re.exec(answer.text);
+        if (m) problems.push(`the answer says "${answer.text.slice(Math.max(0, m.index - 60), m.index + 40)}"`);
+      }
+    }
+    step(
+      "Receipts: the server holds the receipt only as ciphertext (no item names in what it returns)",
+      problems.length === 0,
+      problems.length ? problems.join("; ") : `${Buffer.from(row.ct, "base64url").length} bytes of ciphertext, fetched by the app with a signed request`,
+    );
+    step("Receipts: the app shows the receipt locked, and Face ID opens it to the line items only the buyer can read", wasLocked && opened && sealedLine);
   }
 
   // ── Pay in 4, with a credit line from the CRE workflow ────────────────
+  // The underwriting review reads Nansen, Zerion and Etherscan live, with the keys the CRE trigger has
+  // (workflows/.env), or not at all: a review that needs a provider without its key opens no line and says which
+  // key is missing. Then nothing here may open a plan: the plan's steps are reported as not run, with that reason.
+  let planOpened = false;
+  let noLineBecause = "";
   {
     const { page, popup } = await shopCheckout(context, { product: "halcyon-one", mode: "Pay in 4", prefix: "20-payin4" });
     let labels = await buttons(popup);
@@ -252,40 +351,59 @@ async function receiptInPopup(popup, name) {
     // A new buyer has no line yet: Pay in 4 opens "Raise your limit" first.
     await popup.getByRole("button", { name: labels.find((t) => /^Pay in 4/.test(t)) }).first().click();
     await sleep(1200);
-    if ((await popup.getByRole("button", { name: /Connect your wallet/ }).count()) > 0) {
+    let up = (await popup.getByRole("button", { name: /Connect your wallet/ }).count()) === 0;
+    if (!up) {
       await shot(popup, "20-payin4-5-raise-your-limit");
       await popup.getByRole("button", { name: /Connect your wallet/ }).first().click();
-      // Face ID (dev signer) for the account's consent: the Confirm sheet may not appear; the stand-in history wallet signs.
-      await until("the CRE decision", async () => (await popup.getByText(/Your limit went up|still running/).count()) > 0, 240000, 2000);
-      await sleep(800);
-      await shot(popup, "20-payin4-6-limit-raised");
-      const up = (await popup.getByText("Your limit went up").count()) > 0;
-      step("Pay in 4: Bring your history ran the CRE underwriting workflow and opened a line on chain", up);
+      const outcome = await review(popup);
+      await shot(popup, outcome.up ? "20-payin4-6-limit-raised" : "20-payin4-6-review-not-configured");
+      up = outcome.up;
+      const line = await creditLine(await buyerAddress(app, privateKeyToAccount));
+      if (up) {
+        step("Pay in 4: Bring your history ran the CRE underwriting workflow and opened a line on chain", line > 0n, `limit $${Number(line) / 1e6}`);
+      } else {
+        noLineBecause = outcome.message || "the review opened no line";
+        step(
+          "Pay in 4: Bring your history ran the CRE underwriting workflow; it says which data provider isn't set up, and no line opens",
+          /set up on this server yet/.test(outcome.message) && line === 0n,
+          `"${outcome.message}"; on-chain limit $${Number(line) / 1e6}`,
+        );
+      }
       const done = popup.getByRole("button", { name: "Done" });
-      if (await done.count()) await done.last().click();
-      await sleep(3000);
+      if (up && (await done.count())) await done.last().click();
+      await sleep(1000);
+      // The checkout re-reads the line once the decision lands; until then it still offers Raise your limit.
+      if (up) await until("the checkout to read the new line", async () => (await popup.getByText(/This plan needs .* of limit/).count()) === 0, 90000, 1000).catch(() => {});
     }
-    labels = await buttons(popup);
-    const start = labels.find((t) => /^Pay in 4/.test(t));
-    await shot(popup, "20-payin4-7-app-checkout-with-line");
-    await popup.getByRole("button", { name: start }).first().click();
-    await confirmInPopup(popup, "20-payin4-8");
-    step("Pay in 4: the popup shows its receipt before closing", await receiptInPopup(popup, "20-payin4-8b-app-receipt"));
-    const closed = await until("the popup to close after Pay in 4", async () => popup.isClosed(), 90000, 300).catch(() => false);
-    if (!closed) await shot(popup, "20-payin4-9-popup-still-open");
-    step("Pay in 4: the popup posted its result and closed itself", Boolean(closed));
-    await until("the shop's order page", async () => page.url().includes("/orders/"), 60000, 300);
-    await until("the plan order to read as paid", async () => {
-      await page.reload({ waitUntil: "networkidle" });
-      return (await page.getByText(/Thank you|0 of 4 paid|Pay in 4/).count()) > 0;
-    }, 90000, 3000);
-    await settle(page, 1500);
-    await shot(page, "20-payin4-9-shop-order-plan");
-    step("Pay in 4: the shop's order is paid through a Polaris plan", true, page.url().replace(SHOP, ""));
+    if (up) {
+      labels = await buttons(popup);
+      const start = labels.find((t) => /^Pay in 4/.test(t));
+      await shot(popup, "20-payin4-7-app-checkout-with-line");
+      await popup.getByRole("button", { name: start }).first().click();
+      await confirmInPopup(popup, "20-payin4-8");
+      step("Pay in 4: the popup shows its receipt before closing", await receiptInPopup(popup, "20-payin4-8b-app-receipt"));
+      const closed = await until("the popup to close after Pay in 4", async () => popup.isClosed(), 90000, 300).catch(() => false);
+      if (!closed) await shot(popup, "20-payin4-9-popup-still-open");
+      step("Pay in 4: the popup posted its result and closed itself", Boolean(closed));
+      await until("the shop's order page", async () => page.url().includes("/orders/"), 60000, 300);
+      await until("the plan order to read as paid", async () => {
+        await page.reload({ waitUntil: "networkidle" });
+        return (await page.getByText(/Thank you|0 of 4 paid|Pay in 4/).count()) > 0;
+      }, 90000, 3000);
+      await settle(page, 1500);
+      await shot(page, "20-payin4-9-shop-order-plan");
+      step("Pay in 4: the shop's order is paid through a Polaris plan", true, page.url().replace(SHOP, ""));
+      planOpened = true;
+    } else {
+      for (const name of ["Pay in 4: the popup shows its receipt before closing", "Pay in 4: the popup posted its result and closed itself", "Pay in 4: the shop's order is paid through a Polaris plan"]) {
+        skip(name, `no credit line: ${noLineBecause}`);
+      }
+      await popup.close().catch(() => {});
+    }
     await page.close();
   }
 
-  // ── A new buyer on a fresh phone: Pay in 4 creates the account and raises the limit in one tap ──
+  // ── A new buyer on a fresh phone: Pay in 4 creates the account and runs the review in one tap ──
   {
     const phone = await open({ width: 390, height: 844, profile: `${PROFILE}-newbuyer` });
     try {
@@ -299,12 +417,19 @@ async function receiptInPopup(popup, name) {
       step("New buyer: Raise your limit offers Continue with Face ID (no account on this phone yet)", Boolean(offered));
       if (offered) {
         await faceId.first().click();
-        const up = await until("the new buyer's CRE decision", async () => (await popup.getByText(/Your limit went up|still running/).count()) > 0, 240000, 2000).catch(() => false);
-        await sleep(800);
-        await shot(popup, "25-newbuyer-6-limit-raised");
-        const alert = popup.getByRole("alert");
-        const error = (await alert.count()) ? (await alert.first().innerText()).slice(0, 160) : "";
-        step("New buyer: one tap created the account and the CRE workflow opened a line", Boolean(up) && (await popup.getByText("Your limit went up").count()) > 0, error);
+        const outcome = await review(popup);
+        await shot(popup, outcome.up ? "25-newbuyer-6-limit-raised" : "25-newbuyer-6-review-not-configured");
+        const buyer = await until("the new buyer's account", () => buyerAddress(popup, privateKeyToAccount), 30000, 500).catch(() => null);
+        const line = await creditLine(buyer);
+        if (outcome.up) {
+          step("New buyer: one tap created the account and the CRE workflow opened a line", Boolean(buyer) && line > 0n, `${buyer}; limit $${Number(line) / 1e6}`);
+        } else {
+          step(
+            "New buyer: one tap created the account (Face ID) and ran the review, which says which provider isn't set up and opens no line",
+            Boolean(buyer) && /set up on this server yet/.test(outcome.message) && line === 0n,
+            `${buyer ?? "no account"}; "${outcome.message}"`,
+          );
+        }
       }
       await page.close().catch(() => {});
     } finally {
@@ -313,13 +438,13 @@ async function receiptInPopup(popup, name) {
   }
 
   // ── Collections: the CRE collections workflow collects a due instalment (DEMO_FAST_PLANS=1) ──
-  if (demo.fastPlans) {
-    const { privateKeyToAccount } = require(require.resolve("viem/accounts", { paths: [path.join(__dirname, "..", "apps", "business")] }));
-    const key = await app.evaluate(() => JSON.parse(localStorage.getItem("polaris.dev-signer.v1") || "null")?.privateKey ?? null);
-    const buyerAddress = key ? privateKeyToAccount(key).address : null;
-    const paid = buyerAddress
+  if (demo.fastPlans && !planOpened) {
+    skip("Collections: the CRE collections workflow collected the first instalment on chain (a minute after checkout)", "no Pay in 4 plan opened (no credit line)");
+  } else if (demo.fastPlans) {
+    const buyer = await buyerAddress(app, privateKeyToAccount);
+    const paid = buyer
       ? await until("an instalment collected by the CRE collections run", async () => {
-          const res = await fetch(`${BUSINESS}/api/public/buyers/${buyerAddress}`);
+          const res = await fetch(`${BUSINESS}/api/public/buyers/${buyer}`);
           const plans = (await res.json()).data?.plans ?? [];
           return plans.some((p) => p.installmentsPaid >= 1) ? plans : null;
         }, 300000, 5000).catch(() => null)
@@ -357,7 +482,7 @@ async function receiptInPopup(popup, name) {
 
   // ── Pay directly with a wallet: polarispay-sdk's pay(), one signature, relayed ──
   {
-    const { privateKeyToAccount, generatePrivateKey } = require(require.resolve("viem/accounts", { paths: [require("path").join(__dirname, "..", "apps", "business")] }));
+    const { generatePrivateKey } = require(require.resolve("viem/accounts", { paths: [require("path").join(__dirname, "..", "apps", "business")] }));
     const wallet = privateKeyToAccount(generatePrivateKey());
     const rpcUrl = RPC;
     const faucet = FAUCET;
@@ -410,7 +535,7 @@ async function receiptInPopup(popup, name) {
     await shot(page, "60-wallet-1-shop-checkout");
     const pay = (await buttons(page)).find((t) => /wallet|Pay \$/i.test(t) && !/Built with/.test(t));
     await page.getByRole("button", { name: pay }).first().click();
-    await until("the wallet order page", async () => page.url().includes("/orders/"), 120000, 500);
+    await until("the wallet order page", async () => page.url().includes("/orders/"), POPUP_MS, 500);
     await until("the wallet order to read as paid", async () => {
       await page.reload({ waitUntil: "networkidle" });
       return (await page.getByText(/Thank you/).count()) > 0;
@@ -437,19 +562,33 @@ async function receiptInPopup(popup, name) {
   await dash.goto(BUSINESS + "/dashboard", { waitUntil: "networkidle", timeout: 240000 });
   await settle(dash, 5000);
   await shot(dash, "40-dashboard-overview");
-  const sawPayment = (await dash.getByText(/Halcyon order/).count()) > 0;
-  step("the dashboard shows the payments (from the chain sync)", sawPayment);
+  // A buyer with a Face ID inbox gets a sealed receipt, and the merchant's records then say "Sealed for the buyer" in
+  // place of the description (packages/db SEALED_DESCRIPTION; apps/business README, receipts): no product name from
+  // the bags this run paid for may show on the merchant's side for them.
+  const SEALED = "Sealed for the buyer";
+  const BOUGHT = /Halcyon One|Arc Desk Lamp|Keys 75|Halcyon Coffee Club/;
+  const sealedRows = async () => dash.getByText(SEALED).count();
+  const leaked = async () => ((await dash.locator("main").innerText().catch(() => "")).match(BOUGHT) ?? [null])[0];
+  const overviewSealed = await until("the payments on the overview", async () => (await sealedRows()) > 0, 60000, 2000).catch(() => false);
+  const overviewLeak = await leaked();
+  step("the dashboard shows the payments (from the chain sync), sealed for the buyer, no item names", Boolean(overviewSealed) && !overviewLeak, overviewLeak ? `shows "${overviewLeak}"` : `${await sealedRows()} sealed rows`);
   await dash.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await sleep(1500);
   await shot(dash, "41-dashboard-panels");
   await dash.goto(BUSINESS + "/dashboard/payments", { waitUntil: "networkidle" });
   await settle(dash, 4000);
   await shot(dash, "42-dashboard-payments");
+  console.log(`  payments page: ${(await dash.locator("main").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 600)}`);
   await dash.goto(BUSINESS + "/dashboard/plans", { waitUntil: "networkidle" });
   await settle(dash, 4000);
   await shot(dash, "43-dashboard-pay-in-4");
-  const sawPlan = (await dash.getByText(/Halcyon order/).count()) > 0;
-  step("the dashboard shows the Pay in 4 plan", sawPlan);
+  if (planOpened) {
+    const planSealed = await until("the plan on the dashboard", async () => (await sealedRows()) > 0, 60000, 2000).catch(() => false);
+    const planLeak = await leaked();
+    step("the dashboard shows the Pay in 4 plan, sealed for the buyer, no item names", Boolean(planSealed) && !planLeak, planLeak ? `shows "${planLeak}"` : "");
+  } else {
+    skip("the dashboard shows the Pay in 4 plan, sealed for the buyer, no item names", "no Pay in 4 plan opened (no credit line)");
+  }
   await dash.goto(BUSINESS + "/dashboard/settings", { waitUntil: "networkidle" });
   await settle(dash, 3000);
   await shot(dash, "44-dashboard-settings-registered");
@@ -524,7 +663,9 @@ async function receiptInPopup(popup, name) {
 
   await context.close();
   console.log(JSON.stringify(results, null, 1));
-  if (results.some((r) => !r.ok)) process.exitCode = 1;
+  const count = (v) => results.filter((r) => r.ok === v).length;
+  console.log(`${count(true)} passed, ${count(false)} failed, ${count(null)} not run`);
+  if (results.some((r) => r.ok === false)) process.exitCode = 1;
 })().catch((e) => {
   console.error(e);
   console.log(JSON.stringify(results, null, 1));

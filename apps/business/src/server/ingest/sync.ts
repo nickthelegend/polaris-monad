@@ -34,6 +34,19 @@ export function chunkSize(chainId: number, hyperRpc = false): number {
   return chainId === 31337 ? 2_000 : 100;
 }
 
+/**
+ * POLARIS_SYNC_FROM_BLOCK as a block number, or null when it is unset or
+ * blank. (`Number("")` is 0: read naively, an unset variable meant "from
+ * genesis", which on a fork of Monad testnet is tens of millions of blocks
+ * of 100-block reads.)
+ */
+export function configuredFromBlock(raw: string | undefined = process.env.POLARIS_SYNC_FROM_BLOCK): number | null {
+  const text = raw?.trim();
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
 export type SyncSummary = { from: number; to: number; logs: number; events: number; caughtUp: boolean };
 
 export async function syncChain(options: { maxRanges?: number } = {}): Promise<SyncSummary> {
@@ -45,9 +58,8 @@ export async function syncChain(options: { maxRanges?: number } = {}): Promise<S
 
   let cursor = await db.cursors.get(CURSOR_ID);
   if (!cursor) {
-    // First run: start from the configured block, or from now (no backfill).
-    const configured = Number(process.env.POLARIS_SYNC_FROM_BLOCK ?? "");
-    const start = Number.isInteger(configured) && configured >= 0 ? configured : latest;
+    // First run: start from the configured block, else the deployment's first block, else now (no backfill).
+    const start = configuredFromBlock() ?? chain.fromBlock ?? latest;
     cursor = await db.cursors.upsert({ id: CURSOR_ID, block: start - 1, updatedAt: new Date().toISOString() });
   }
 

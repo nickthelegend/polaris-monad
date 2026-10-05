@@ -4,7 +4,9 @@
 //   PLAYWRIGHT_MODULE=<path to an installed playwright> pnpm demo:e2e:split
 //
 // Four people, four browser profiles, one local chain (PolarisSplit, relayed by the dev
-// relayer under the production policy; the dev signer stands in for Face ID):
+// relayer under the production policy). Each profile signs in with Face ID: on demo:local's
+// fork, the app's own passkey ceremony on Chrome's virtual authenticator with PRF
+// (scripts/lib/virtual-authenticator.cjs); on its Hardhat stack, the dev signer:
 //
 //  1. Maya (a phone, 402x877) paid a $200 dinner for five. She splits it equally, names
 //     her four friends and gets one link: $40 each, $160 to collect, her own $40 hers.
@@ -32,6 +34,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+const { addAuthenticator, buyerAddress } = require("./lib/virtual-authenticator.cjs");
+
 const REPO = path.join(__dirname, "..");
 const PHONE = { width: 402, height: 877 };
 const DESKTOP = { width: 1440, height: 900 };
@@ -46,6 +50,8 @@ function demoUrls() {
     business: process.env.BUSINESS || demo.urls.business || "http://localhost:3100",
     rpc: process.env.RPC || demo.urls.rpc || "http://127.0.0.1:8545",
     stablecoin: demo.contracts?.Stablecoin ?? null,
+    // Hardhat mode's app signs with the dev signer; fork mode's with passkeys (demo.json devSigner false).
+    devSigner: demo.devSigner !== false,
   };
 }
 
@@ -90,6 +96,8 @@ async function runSplit({ chromium, urls = demoUrls(), out, profile, step }) {
     context.setDefaultTimeout(30000);
     contexts.push(context);
     const page = context.pages()[0] ?? (await context.newPage());
+    // One passkey authenticator per person (per profile), before the app loads.
+    if (!urls.devSigner) await addAuthenticator(context, { origin: new URL(APP).origin, log: (line) => console.log(`  [${name}] ${line}`) });
     page.on("pageerror", (e) => console.log(`  [${name} pageerror] ${String(e).slice(0, 240)}`));
     page.on("console", (m) => {
       if (m.type() === "error" && !/Download the React DevTools|favicon/.test(m.text())) console.log(`  [${name} console] ${m.text().slice(0, 240)}`);
@@ -120,10 +128,9 @@ async function runSplit({ chromium, urls = demoUrls(), out, profile, step }) {
   const seen = async (page, text) => (await visible(page, text).count()) > 0;
   const waitFor = (page, text, timeoutMs = 60000) => until(`"${text}" on ${page.url()}`, () => seen(page, text), timeoutMs, 400);
 
-  /** The account this profile's dev signer holds (kept for the device, like a passkey). */
+  /** The account on this profile: the passkey's (the app's public record of it), or the dev signer's. */
   async function accountOf(page) {
-    const key = await page.evaluate(() => JSON.parse(localStorage.getItem("polaris.dev-signer.v1") || "null")?.privateKey ?? null);
-    return key ? privateKeyToAccount(key).address : null;
+    return buyerAddress(page, privateKeyToAccount);
   }
 
   async function createAccount(who) {
@@ -213,7 +220,7 @@ async function runSplit({ chromium, urls = demoUrls(), out, profile, step }) {
     const maya = await open("maya", PHONE);
     recordRelays(maya);
     const mayaAddress = await createAccount(maya);
-    step("Split: Maya has an account (dev signer for Face ID), and no dollars", Boolean(mayaAddress), mayaAddress ?? "");
+    step(`Split: Maya has an account (${urls.devSigner ? "dev signer for Face ID" : "Face ID: a passkey with PRF"}), and no dollars`, Boolean(mayaAddress), mayaAddress ?? "");
     const mayaBefore = await balanceOf(mayaAddress);
 
     await goto(maya.page, `${APP}/split/new`);

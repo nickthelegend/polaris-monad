@@ -29,8 +29,13 @@ export type LocalDeployment = {
   deployer: `0x${string}`;
   contracts: Record<string, { address: `0x${string}` } | undefined>;
   cre?: {
-    /** The forwarder the receivers trust: the deployed MockKeystoneForwarder, or the address chain:local planted it at. */
+    /**
+     * The forwarder the receivers trust: the deployed MockKeystoneForwarder, the address chain:local planted
+     * it at, or (demo:local on a fork of Monad testnet) Chainlink's own MockKeystoneForwarder as it stands there.
+     */
     forwarder?: `0x${string}`;
+    /** The only origin the receivers accept a delivery from while behind a simulation forwarder (zero: none). */
+    simulationTransmitter?: `0x${string}`;
     workflows?: {
       guardian?: { priceFeed?: { address?: string; decimals?: number; description?: string; kind?: string; chainSelectorName?: string | null } };
     };
@@ -93,10 +98,21 @@ export function rungWindow(everySeconds: number): number {
   return Math.max(30, everySeconds + Math.ceil(everySeconds / 2));
 }
 
-function forwarderOf(d: LocalDeployment): `0x${string}` {
+export function forwarderOf(d: Pick<LocalDeployment, "cre" | "contracts">): `0x${string}` {
   const forwarder = d.cre?.forwarder ?? d.contracts.MockKeystoneForwarder?.address;
   if (!forwarder) throw new Error("the deployment records no forwarder: local runners deliver through the local chain's own MockKeystoneForwarder");
   return forwarder;
+}
+
+/**
+ * Who delivers reports, as `cre workflow simulate --broadcast`'s key would:
+ * the receivers' recorded simulation transmitter (on a fork, the node's
+ * second account), else the deployer (a local node's deployment, where the
+ * deployer is the transmitter).
+ */
+export function transmitterOf(d: Pick<LocalDeployment, "cre" | "deployer">): `0x${string}` {
+  const t = d.cre?.simulationTransmitter;
+  return t && !/^0x0{40}$/i.test(t) ? t : d.deployer;
 }
 
 /** polaris-collections for collections:local: both triggers, candidates from the chain (or a local indexer), the runner's pace. */

@@ -33,6 +33,7 @@ import type { Address } from "viem";
 import { bridgeEvm } from "../e2e/helpers/local-evm.ts";
 import { configSchema, onHttpTrigger } from "../src/underwriting/workflow.ts";
 import { fs } from "../test/helpers/host.ts";
+import { forwarderOf, type LocalDeployment, transmitterOf } from "./config.ts";
 import { sendLive } from "./live-http.ts";
 import { type ConfidentialRequestLike, type CreRequestLike, type SentRequest, toSent, toSentConfidential } from "./requests.ts";
 
@@ -43,11 +44,7 @@ type Job = {
   input: { user: Address; linked?: { wallet: Address } | null };
 };
 
-type Deployment = {
-  chainId: number;
-  deployer: Address;
-  contracts: Record<string, { address: Address }>;
-};
+type Deployment = LocalDeployment;
 
 const IN = process.env.LOCAL_TRIGGER_IN ?? "";
 const OUT = process.env.LOCAL_TRIGGER_OUT ?? "";
@@ -81,7 +78,7 @@ test("local underwriting trigger", async () => {
     ...staging,
     receiver: at("UnderwritingReceiver"),
     scoreManager: at("ScoreManager"),
-    forwarder: at("MockKeystoneForwarder"),
+    forwarder: forwarderOf(d),
     stablecoins: [at("Stablecoin")],
     authorizedKeys: [],
     // A provider without its key has no secret: the workflow treats it as not configured.
@@ -96,7 +93,7 @@ test("local underwriting trigger", async () => {
   });
 
   const selector = cre.capabilities.EVMClient.SUPPORTED_CHAIN_SELECTORS[config.chainSelectorName as keyof typeof cre.capabilities.EVMClient.SUPPORTED_CHAIN_SELECTORS];
-  const record = bridgeEvm(EvmMock.testInstance(selector), { url: job.rpc, forwarder: at("MockKeystoneForwarder"), transmitter: d.deployer });
+  const record = bridgeEvm(EvmMock.testInstance(selector), { url: job.rpc, forwarder: forwarderOf(d), transmitter: transmitterOf(d) });
   const callbacks: SentRequest[] = [];
   const http = HttpActionsMock.testInstance();
   http.sendRequest = (input) => {

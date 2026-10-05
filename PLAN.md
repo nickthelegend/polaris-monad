@@ -105,10 +105,21 @@ Each task: objective · acceptance · verify · status.
   UNTESTED until the keys exist (Etherscan's is set)
 - **P1.5 Real dollar locally.** The local stack uses Agora's AUSD on a fork
   (see P2.1); MockAUSD stays for unit tests and `AUSD_MODE=mock` only. ·
-  NOT STARTED
+  DONE (6 Oct, branch `metropolis/fork-stack`): `demo:local` defaults to the
+  fork; pool, buyers and the direct-wallet payer hold AUSD drawn from Agora's
+  faucet (the faucet server hands out $500 from a reserve of drips, nothing
+  minted). MockAUSD remains on `DEMO_CHAIN=hardhat`
 - **P1.6 No dev signer in the product path.** Automation signs in through a
   real WebAuthn ceremony (Chrome DevTools virtual authenticator with PRF), so
-  Mera's real code derives the account and receipt keys. · NOT STARTED
+  Mera's real code derives the account and receipt keys. · DONE (6 Oct,
+  `metropolis/fork-stack`): fork mode runs the app without the dev signer;
+  `demo:e2e` and `demo:e2e:split` add Chrome's virtual authenticator (ctap2,
+  internal, resident key, UV, PRF) per profile, and Mera's ceremony derives
+  the account and receipt keys. Chrome binds a virtual authenticator to one
+  tab and drops the PRF secret when a credential is copied to another, so
+  the app's other tabs (the shop's popup) hand their WebAuthn calls to the
+  tab that holds it (`scripts/lib/virtual-authenticator.cjs`). The dev
+  signer stays for `DEMO_CHAIN=hardhat`
 
 ### P2 Real local stack
 
@@ -116,10 +127,18 @@ Each task: objective · acceptance · verify · status.
   (`--prune-history 300`), `deploy:fork`, pool and buyers funded from Agora's
   faucet, Chainlink's MockKeystoneForwarder (Chainlink's own simulation
   contract) for CRE reports, own ports for every server. · Acceptance: one
-  command brings it up; `check:deployment:fork` 63/63. · NOT STARTED
+  command brings it up; `check:deployment:fork` 63/63. · DONE (6 Oct,
+  `metropolis/fork-stack`): `pnpm demo:local` brings it up and refuses to go
+  on unless `check:deployment:fork` passes in full (67 of 67 now; the check
+  grew since the 63). Report gas is sized from a traced delivery (G14 on the
+  fork). `demo:e2e` 23 passed, 0 failed, 5 not run; split 22 of 22
 - **P2.2 CRE on the fork**: the three workflows' code runs against the fork
   (local runner today; `cre workflow simulate` once `cre login` is done:
-  BLOCKED on the team). · NOT STARTED
+  BLOCKED on the team). · IN PROGRESS: the local runners run against the
+  fork through Chainlink's MockKeystoneForwarder from the recorded
+  transmitter (guardian attestations, an underwriting report and
+  collections landed with `ReportProcessed` true); `cre workflow simulate`
+  still BLOCKED
 - **P2.3 Merchant sign-in**: real Privy login on localhost needs the origin
   allowed in Privy and a person for the email code (or Privy test
   credentials enabled by the team). Until then the local merchant session is
@@ -145,8 +164,9 @@ Each task: objective · acceptance · verify · status.
 ### P4 Verification
 
 - **P4.1 Receipts step in `demo:e2e`** (written, branch
-  `metropolis/receipts-e2e`): run green. · BLOCKED on the shared checkout
-  (another session's demo run), then on P2.
+  `metropolis/receipts-e2e`): run green. · DONE (6 Oct, on the fork with a
+  passkey): the four receipt steps pass; the step now checks the app's own
+  signed `POST /api/receipts` (base64url `enc`/`ct`, no item names)
 - **P4.2 `docs/TEST-PLAN-ZERO-MOCK.md`**: every page, endpoint, contract
   interaction and integration with its expected result. · DONE (written;
   the runs fill it in)
@@ -176,8 +196,8 @@ evidence: 730 lines. The product-path gaps:
 | G6 | `apps/shop/src/lib/dev-polaris/mock.ts`, `app/api/dev-polaris/**` | A mock Polaris API in development | P2 | Remove | P1.3 |
 | G7 | `packages/underwriting/src/node/client.ts:52` defaults to `fixture` without a key | Credit lines from synthesized evidence | P0 | Not configured | P1.4 |
 | G8 | `apps/gateway/src/server.ts:36` `dataMode: "fixture"` | Same, through the gateway | P1 | Same | P1.4 |
-| G9 | `scripts/demo-local.mjs` deploys MockAUSD and the repo's own MockKeystoneForwarder and MockPriceFeed | The local product runs on a mock dollar | P1 | Fork stack | P1.5, P2.1 |
-| G10 | `apps/app/src/lib/account/dev-signer.ts`, `dev-receipts.ts`; `demo:local` sets `NEXT_PUBLIC_DEV_SIGNER` | Face ID replaced by a dev key in every local run | P1 | Virtual authenticator | P1.6 |
+| G9 | `scripts/demo-local.mjs` deploys MockAUSD and the repo's own MockKeystoneForwarder and MockPriceFeed | The local product runs on a mock dollar | P1 | Fork stack (default since 6 Oct; the mocks remain on `DEMO_CHAIN=hardhat`) | P1.5, P2.1 |
+| G10 | `apps/app/src/lib/account/dev-signer.ts`, `dev-receipts.ts`; `demo:local` sets `NEXT_PUBLIC_DEV_SIGNER` | Face ID replaced by a dev key in every local run | P1 | Virtual authenticator (done in fork mode, 6 Oct; `DEMO_CHAIN=hardhat` keeps the dev signer) | P1.6 |
 | G11 | `scripts/demo-local.mjs:426–431` `POLARIS_LOCAL_SESSION_*` | Merchant sign-in bypasses Privy locally | P2 | Real Privy on localhost (team) | P2.3 |
 | G12 | Testnet stablecoin is MockAUSD (`deployments/monad-testnet.json`) | Agora bounty on a labelled mock | P1 | Redeploy on go | P7 |
 | G13 | `README.md` Attribution was "TBD" | Rules require attribution | P1 | Done 6 Oct | P6 |

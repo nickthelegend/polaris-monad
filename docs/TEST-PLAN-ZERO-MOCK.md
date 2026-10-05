@@ -58,13 +58,13 @@ fixes.
 |---|---|---|---|---|
 | F1 | Face ID sign-up | One ceremony; Mera derives the account; reload and storage clear → same account from the passkey | not run | |
 | F2 | Pay now from a link | One confirm; relayed `PolarisCheckout.pay` on the fork; buyer −amount, merchant +amount −0.5%; receipt shown; buyer holds 0 MON | not run | |
-| F3 | Pay in 4 | Plan opens on chain against the credit line; merchant paid in full from the pool; 4 × instalments shown | not run | |
-| F4 | Raise your limit | With no Nansen/Zerion key: says which provider isn't configured; never a line from invented data | not run | |
+| F3 | Pay in 4 | Plan opens on chain against the credit line; merchant paid in full from the pool; 4 × instalments shown | UNTESTED (no provider keys in the run, so no line opened) | |
+| F4 | Raise your limit | With no Nansen/Zerion key: says which provider isn't configured; never a line from invented data | PASS (6 Oct, `demo:e2e` on the fork: names Zerion, Etherscan and Nansen as not set up; on-chain limit stays $0) | |
 | F5 | Subscribe | First period charged on chain; cancel stops the next | not run | |
 | F6 | Send by link → claim | Escrowed in PolarisSend; claim pays the recipient once; sender cancel works before claim | not run | |
 | F7 | Split the bill | Organiser creates; a friend pays a share straight to the organiser; closing works | not run | |
-| F8 | Sealed receipt | The server holds ciphertext only; the app opens it with the passkey's inbox key | not run | |
-| F9 | Collections | A due instalment is collected on chain (CRE collections code, Chainlink's forwarder on the fork) | not run | |
+| F8 | Sealed receipt | The server holds ciphertext only; the app opens it with the passkey's inbox key | PASS (6 Oct, `demo:e2e` on the fork: ciphertext only to the app's signed request; the passkey's keys open it) | |
+| F9 | Collections | A due instalment is collected on chain (CRE collections code, Chainlink's forwarder on the fork) | UNTESTED (no plan opened in the 6 Oct fork run; no provider keys) | |
 | F10 | Lost approval → sign again | The buyer re-signs; the retry collects at once | not run | |
 | F11 | Guardian pause | A raised threshold pauses new Pay in 4 ("Threshold raised for demo"); resumes after | not run | |
 | F12 | Mid-flow interruption | Closing the checkout popup leaves no charge and a retryable session | not run | |
@@ -120,7 +120,7 @@ fixes.
 
 | ID | Item | Correct means | R1 | R2 |
 |---|---|---|---|---|
-| C1 | Deploy | `deploy:fork` with real AUSD; `check:deployment:fork` all pass | not run | |
+| C1 | Deploy | `deploy:fork` with real AUSD; `check:deployment:fork` all pass | PASS (6 Oct, fork: 67 of 67; the check grew since 63) | |
 | C2 | Money paths | `fork:smoke` 14 of 14 on real AUSD | not run | |
 | C3 | Monad testnet | `check:deployment:monad` read-only 65 of 65; any testnet transaction: UNTESTED, awaiting testnet go | not run | |
 
@@ -128,7 +128,7 @@ fixes.
 
 | ID | Integration | Correct means | R1 | R2 |
 |---|---|---|---|---|
-| I1 | Mera (Face ID) | Real ceremony with PRF; account and receipt keys derived by Mera | not run | |
+| I1 | Mera (Face ID) | Real ceremony with PRF; account and receipt keys derived by Mera | PASS (6 Oct, `demo:e2e` on the fork: Chrome's virtual authenticator with PRF, Mera's ceremony; a real phone not run) | |
 | I2 | Privy relayer | Server wallet policy refuses a disallowed call (testnet: awaiting go; local uses the local relayer) | not run | |
 | I3 | Privy merchant login | Real email sign-in on the local origin | not run | |
 | I4 | Chainlink CRE | `cre workflow simulate` of each workflow | not run | |
@@ -137,7 +137,7 @@ fixes.
 | I7 | Zerion | Live balances and tenure | not run | |
 | I8 | Etherscan | Live history signal (key present) | not run | |
 | I9 | Envio | Indexer on the local chain feeds the dashboard, webhooks and CRE candidates | not run | |
-| I10 | Agora AUSD | Real AUSD on the fork, faucet funding | not run | |
+| I10 | Agora AUSD | Real AUSD on the fork, faucet funding | PASS (6 Oct, `demo:local` fork mode: pool, buyers and the wallet payer funded from Agora's faucet) | |
 
 ## Summary
 

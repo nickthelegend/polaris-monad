@@ -34,12 +34,12 @@ type Eip1193 = { request(args: { method: string; params?: unknown[] }): Promise<
 type HistoryWallet = { address: Address; signMessage(message: string): Promise<Hex> };
 
 /**
- * `pnpm demo:local` on a local chain (NEXT_PUBLIC_LOCAL_DEMO=1, chain 31337)
+ * `pnpm demo:local` on a local chain (NEXT_PUBLIC_LOCAL_DEMO=1, env.localChain)
  * with no wallet in the browser: a throwaway key stands in for the buyer's
  * old wallet. The local CRE trigger reads its history from the live
  * providers (it starts empty), and the app says so. Never on any other chain.
  */
-export const LOCAL_HISTORY_WALLET = process.env.NEXT_PUBLIC_LOCAL_DEMO === "1" && env.chainId === 31337;
+export const LOCAL_HISTORY_WALLET = process.env.NEXT_PUBLIC_LOCAL_DEMO === "1" && env.localChain;
 
 /** The wallet the buyer already uses, from the browser (an extension, or a wallet app's own browser). */
 async function connectHistoryWallet(): Promise<HistoryWallet> {
