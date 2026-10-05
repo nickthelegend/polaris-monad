@@ -66,6 +66,8 @@ export function CheckoutDesktop({ link }: { link: PaymentLink }) {
   const needFor = (m: PayMode) => (m === "now" ? link.amount : m === "later" ? 0n : (sub?.price ?? link.amount));
   const short = available !== undefined && state.status !== "none" && available < needFor(mode);
   const overLimit = mode === "later" && later && credit.value ? credit.value.available < later.total : false;
+  // Pay in 4 waits for the credit line, so a fast click can't skip Raise your limit.
+  const creditPending = mode === "later" && Boolean(later) && credit.value === undefined;
   const payDate = (i: number) => (later && now ? shortDate(dueAt(now, later.interval, i)) : "");
   const each = later ? usd(later.amounts[0] ?? 0n) : "";
   const signedIn = available !== undefined && state.status !== "none";
@@ -265,7 +267,7 @@ export function CheckoutDesktop({ link }: { link: PaymentLink }) {
           </div>
 
           <div className="mt-auto grid gap-3 pt-2">
-            <PrimaryButton size="lg" block icon={<ScanFace />} disabled={short || overLimit || (mode === "later" && paused !== null)} onClick={() => setConfirming(true)}>
+            <PrimaryButton size="lg" block icon={<ScanFace />} disabled={short || overLimit || creditPending || (mode === "later" && paused !== null)} onClick={() => setConfirming(true)}>
               {title}
             </PrimaryButton>
             {mode === "later" && paused && link.modes.now ? (

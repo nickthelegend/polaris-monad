@@ -93,6 +93,9 @@ export function CheckoutSheet({ link }: { link: PaymentLink }) {
   const needFor = (m: PayMode) => (m === "now" ? link.amount : m === "later" ? 0n : (sub?.price ?? link.amount));
   const short = (m: PayMode) => available !== undefined && state.status !== "none" && available < needFor(m);
   const overLimit = later && credit.value ? credit.value.available < later.total : false;
+  // Pay in 4 waits for the credit line: until it loads, "over the limit" is
+  // unknown, and a fast tap must not skip Raise your limit.
+  const creditPending = Boolean(later) && credit.value === undefined;
   // Payment i falls due (i + 1) intervals after the plan opens (PolarisLoanEngine.installmentDueAt).
   const payDate = (i: number) => (later && now ? shortDate(dueAt(now, later.interval, i)) : "");
   const each = later ? usd(later.amounts[0] ?? 0n) : "";
@@ -254,7 +257,7 @@ export function CheckoutSheet({ link }: { link: PaymentLink }) {
             key={m}
             variant={m === "now" ? "lime" : "purple"}
             size="lg"
-            disabled={short(m) || (m === "later" && paused !== null)}
+            disabled={short(m) || (m === "later" && (paused !== null || creditPending))}
             onClick={() => {
               setMode(m);
               // Over the limit, Pay in 4 first shows the limit and the way to raise it.
