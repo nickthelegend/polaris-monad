@@ -70,6 +70,8 @@ fixes.
 | F12 | Mid-flow interruption | Closing the checkout popup leaves no charge and a retryable session | not run | |
 | F13 | API down | The app shows a retryable error, no fake success | not run | |
 | F14 | Insufficient balance | Pay now refused before signing with a clear message | not run | |
+| F15 | Add to Boost | From Select account → Boost, the Credit line's Boost row or desktop Credit: amount > balance or < $0.10 can't continue; one Face ID; relayed `CollateralVault.lockWithPermit` (permit spender = the vault, value = the amount); `lockedOf` +amount, dollar balance −amount, `creditLimitOf` up by ≤ 1.5× the amount; the success sheet shows the new Boost and limit read from chain; buyer holds 0 MON | not run | |
+| F16 | Take out of Boost | Not offered: the deployed vault's `withdraw` pays `msg.sender` only, so no relayer can carry it; the Boost sheet says taking dollars out isn't in the app yet (correct = that line shows, and no withdraw button exists) | not run | |
 
 ## B. Polaris for Business (`apps/business`)
 

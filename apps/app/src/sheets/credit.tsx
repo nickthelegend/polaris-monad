@@ -6,6 +6,8 @@ import {
   FeaturedTile,
   GradientCard,
   IconButton,
+  ListGroup,
+  ListRow,
   Money,
   Pill,
   ScreenHeader,
@@ -13,17 +15,19 @@ import {
   Sheet,
   Skeleton,
 } from "@polaris/ui";
-import { Gauge } from "lucide-react";
+import { Gauge, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { MerchantAvatar, merchantBrand } from "@/components/avatars";
+import { BoostSheet } from "@/components/boost-sheet";
 import { BringHistorySheet } from "@/components/bring-history";
 import { CreditGuardLine } from "@/components/credit-guard-note";
 import { CreditProvenance } from "@/components/credit-provenance";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
 import { CreditDesktop } from "@/desktop/credit";
 import { useOwner } from "@/lib/account/hooks";
-import { getCreditLine, getPlans } from "@/lib/data";
+import { boostRaise } from "@/lib/boost";
+import { getBoost, getCreditLine, getPlans } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { relativeDay, shortDate } from "@/lib/dates";
 import { usd } from "@/lib/money";
@@ -36,7 +40,9 @@ export function CreditSheet() {
   const owner = useOwner();
   const credit = useData(() => getCreditLine(owner), [owner]);
   const plans = useData(() => getPlans(owner), [owner]);
+  const boost = useData(() => getBoost(owner), [owner]);
   const [raising, setRaising] = useState(false);
+  const [boosting, setBoosting] = useState(false);
 
   const active = plans.value?.plans.filter((p) => p.status === "active") ?? [];
   const upcoming = active
@@ -131,6 +137,18 @@ export function CreditSheet() {
           {plans.value && upcoming.length === 0 ? <p className="text-[15px] text-ui-muted">Nothing due.</p> : null}
         </div>
 
+        {boost.value ? (
+          <ListGroup label="Boost" className="mt-2">
+            <ListRow
+              icon={<Sparkles />}
+              tone="tint-purple"
+              title="Add to Boost"
+              description={`${usd(boost.value.locked)} locked now. Each $1 adds up to ${usd(boostRaise(1_000_000n, boost.value.multiplierBps))} to your limit.`}
+              onClick={() => setBoosting(true)}
+            />
+          </ListGroup>
+        ) : null}
+
         <div className="mt-2 grid grid-cols-2 gap-3">
           <Button variant="dark" shape="rounded" size="lg" onClick={() => router.push("/credit/score", { scroll: false })}>
             Credit score
@@ -141,6 +159,7 @@ export function CreditSheet() {
         </div>
       </Sheet.Body>
       <BringHistorySheet open={raising} onOpenChange={setRaising} credit={credit.value} />
+      <BoostSheet open={boosting} onOpenChange={setBoosting} />
     </div>
   );
 }

@@ -34,5 +34,5 @@ function assertMatches(app: Abi, contract: string) {
 describe("the app's chain reads match the contracts", () => {
   it("the dollar's balanceOf", () => assertMatches(ausdAbi, "MockAUSD"));
   it("PolarisSend's linkOf and keyUsed", () => assertMatches(sendAbi, "PolarisSend"));
-  it("CollateralVault's lockedOf (Boost)", () => assertMatches(vaultAbi, "CollateralVault"));
+  it("CollateralVault's lockedOf and creditMultiplierBps (Boost)", () => assertMatches(vaultAbi, "CollateralVault"));
 });

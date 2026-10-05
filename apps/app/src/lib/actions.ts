@@ -1,10 +1,12 @@
 import { type Address, type Hex, type LocalAccount, parseAbi, zeroAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { api, apiConfigured } from "./api";
+import { BOOST_PERMIT_SECONDS, boostAmountProblem, buildBoostPermit } from "./boost";
 import { owedOnOpenPlans } from "./collection";
 import { publicClient } from "./chain";
 import type { PaymentLink, Person, Plan } from "./data/types";
 import { getDomain, isConfigured, resolveContract } from "./domains";
+import { getNetwork } from "./network";
 import { amountParam, type Micros, usd } from "./money";
 import { inboxReady } from "./receipts/inbox";
 import { RelayError, type RelayReceipt, relayer, type Signed } from "./relayer";
@@ -436,4 +438,23 @@ export async function payEarly(account: LocalAccount, plan: Plan): Promise<Relay
     buildRepayIntent(domain, { loanId: plan.loanId, amount: outstanding, expectedRepaid: repaid, nonce, deadline: now() + 15n * MINUTE }),
   );
   return relayer.payEarly({ planId: plan.id, loanId: plan.loanId, borrower: account.address, repay });
+}
+
+/**
+ * Add to Boost: one ERC-2612 permit on the dollar, spender CollateralVault,
+ * value exactly `amount`, under the dollar's domain as Polaris for Business
+ * reports it; the relayer carries it to `CollateralVault.lockWithPermit`
+ * (lib/boost.ts). The vault is the one the deployment record names, never
+ * one from the caller. `balance` (the dollar balance on screen) refuses an
+ * amount the account doesn't hold before anything is signed.
+ */
+export async function addToBoost(account: LocalAccount, amount: Micros, opts: { balance?: Micros } = {}): Promise<RelayReceipt> {
+  const problem = boostAmountProblem(amount, opts.balance);
+  if (problem) throw new RelayError(problem.includes("balance") ? "insufficient-funds" : "invalid-signature", `${problem}.`);
+  const network = getNetwork();
+  const vault = network ? (await network).vault : null;
+  if (!vault) throw new RelayError("unavailable", "Boost isn't available on this network.");
+  const [domain, nonce] = await Promise.all([getDomain("ausd"), readNonce("ausd", account.address)]);
+  const permit = await sign(account, buildBoostPermit(domain, { owner: account.address, vault, amount, nonce, deadline: now() + BOOST_PERMIT_SECONDS }));
+  return relayer.lockCollateral({ permit });
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import { Button, DetailsList, MiniCardCarousel, Money, Sheet, Skeleton } from "@polaris/ui";
+import { Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import { useAccounts } from "@/components/accounts";
+import { BoostSheet } from "@/components/boost-sheet";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
+import { boostRaise } from "@/lib/boost";
 import { usd } from "@/lib/money";
 import type { HomeAccount } from "@/lib/prefs";
 
@@ -18,11 +21,12 @@ const ABOUT: Record<HomeAccount, string> = {
 export function AccountsSheet() {
   const close = useCloseSheet();
   const asked = useSearchParams().get("account");
-  const { accounts, selected, select, credit } = useAccounts();
+  const { accounts, selected, select, credit, boost } = useAccounts();
   const [picked, setPicked] = useState<HomeAccount | null>(
     asked === "dollar" || asked === "later" || asked === "boost" ? asked : null,
   );
   const current = accounts.find((a) => a.id === (picked ?? selected?.id)) ?? accounts[0];
+  const [boosting, setBoosting] = useState(false);
 
   if (!current) {
     return (
@@ -54,14 +58,21 @@ export function AccountsSheet() {
             { label: "Number", value: `**** ${current.last4}` },
             current.id === "later" && credit
               ? { label: "Interest", value: `${credit.aprBps / 100}% a year` }
-              : { label: "Currency", value: "US dollars" },
+              : current.id === "boost" && boost
+                ? { label: "Each $1 adds", value: `Up to ${usd(boostRaise(1_000_000n, boost.multiplierBps))} of limit` }
+                : { label: "Currency", value: "US dollars" },
             current.id === "later" && credit ? { label: "In use", value: usd(credit.used) } : { label: "Fees", value: "None" },
           ]}
         />
       </Sheet.Body>
       <Sheet.Footer className="lg:[&>*]:flex-1">
+        {current.id === "boost" ? (
+          <Button variant="lime" size="lg" icon={<Sparkles />} onClick={() => setBoosting(true)}>
+            Add to Boost
+          </Button>
+        ) : null}
         <Button
-          variant="lime"
+          variant={current.id === "boost" ? "dark" : "lime"}
           size="lg"
           disabled={onHome}
           onClick={() => {
@@ -72,6 +83,7 @@ export function AccountsSheet() {
           {onHome ? "On Home now" : "Show on Home"}
         </Button>
       </Sheet.Footer>
+      <BoostSheet open={boosting} onOpenChange={setBoosting} />
     </>
   );
 }

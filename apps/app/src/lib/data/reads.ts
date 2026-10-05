@@ -15,5 +15,8 @@ export const sendAbi = parseAbi([
   "function keyUsed(address linkKey) view returns (bool)",
 ]);
 
-/** CollateralVault: the dollars an account has locked in Boost. */
-export const vaultAbi = parseAbi(["function lockedOf(address user) view returns (uint256)"]);
+/** CollateralVault: the dollars an account has locked in Boost, and what each dollar adds to the limit. */
+export const vaultAbi = parseAbi([
+  "function lockedOf(address user) view returns (uint256)",
+  "function creditMultiplierBps() view returns (uint256)",
+]);
