@@ -3,18 +3,14 @@
 import dynamic from "next/dynamic";
 import type { ReactNode } from "react";
 
-import { DEV_MOCK_SESSION, LOCAL_SESSION_TOKEN } from "@/lib/auth-context";
+import { LOCAL_SESSION_TOKEN } from "@/lib/auth-context";
 import { PRIVY_CONFIGURED, PrivyAuthProvider, UnconfiguredAuthProvider } from "./privy-auth";
 
 /**
- * The development-only mock session. NODE_ENV is replaced at build time, so in
- * a production build this is `null` and the mock module is never compiled into
- * any bundle (no import reaches it).
+ * `pnpm demo:local`'s session. NODE_ENV is replaced at build time, so in a
+ * production build this is `null` and the module is never compiled into any
+ * bundle (no import reaches it).
  */
-const MockAuthProvider =
-  process.env.NODE_ENV === "development" ? dynamic(() => import("./mock-auth").then((m) => m.MockAuthProvider)) : null;
-
-/** `pnpm demo:local`'s session (development only, like the mock). */
 const LocalAuthProvider =
   process.env.NODE_ENV === "development" ? dynamic(() => import("./local-auth").then((m) => m.LocalAuthProvider)) : null;
 
@@ -24,9 +20,6 @@ const LocalAuthProvider =
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Development only; `false` in every production build (see auth-context).
-  if (process.env.NODE_ENV === "development" && DEV_MOCK_SESSION && MockAuthProvider) {
-    return <MockAuthProvider>{children}</MockAuthProvider>;
-  }
   if (process.env.NODE_ENV === "development" && LOCAL_SESSION_TOKEN && LocalAuthProvider) {
     return <LocalAuthProvider>{children}</LocalAuthProvider>;
   }

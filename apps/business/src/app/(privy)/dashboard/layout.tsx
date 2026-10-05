@@ -9,7 +9,7 @@ import { BusinessLogo } from "@/components/app/brand";
 import { DashboardShell } from "@/components/shell/dashboard-shell";
 import { useAuth } from "@/lib/auth-context";
 import { MerchantContext } from "@/lib/merchant-context";
-import { SampleProvider, useQuery } from "@/lib/session";
+import { useQuery } from "@/lib/session";
 import { consumeExplicitSignOut, markExplicitSignOut } from "@/lib/sign-out";
 
 /**
@@ -118,9 +118,7 @@ function SignedIn({ children }: { children: React.ReactNode }) {
 
   return (
     <MerchantContext.Provider value={value}>
-      <SampleProvider merchant={value.merchant}>
-        <DashboardShell merchant={value.merchant}>{children}</DashboardShell>
-      </SampleProvider>
+      <DashboardShell merchant={value.merchant}>{children}</DashboardShell>
     </MerchantContext.Provider>
   );
 }

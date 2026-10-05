@@ -38,10 +38,8 @@ export const GET = withPublic(async (req) => {
 
 /**
  * How this build and process are wired, for scripts/deploy-check.mjs; all of
- * it public. The mock session is decided when Next builds (next.config.ts
- * blanks POLARIS_DEV_MOCK_SESSION outside `next dev`), so a production build
- * always reports false; the local session is `pnpm demo:local`'s, which the
- * server refuses in production. `privyAppId` and `demoShopUrl` are what the
+ * it public. The local session is `pnpm demo:local`'s, which the server
+ * refuses in production. `privyAppId` and `demoShopUrl` are what the
  * browser bundle was built with (NEXT_PUBLIC_*, inlined at build time), and
  * `privyServerAppId` the app the server verifies sign-ins against: the two
  * must be the same Privy app.
@@ -50,7 +48,6 @@ function buildFlags(config: ReturnType<typeof getConfig>) {
   const privy = privyServerConfig();
   return {
     production: config.production,
-    devMockSession: process.env.NODE_ENV === "development" && Boolean(process.env.POLARIS_DEV_MOCK_SESSION),
     localSession: config.localSession !== null,
     privy: privy.configured,
     privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID || null,

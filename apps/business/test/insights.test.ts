@@ -1,7 +1,7 @@
 import type { Activity, IndexerClient } from "@polarispay/indexer-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { getIndexedEvents, getUnderwritingReasons } from "@/lib/data/insights";
+import { getCollectionsRun, getIndexedEvents, getUnderwritingReasons } from "@/lib/data/insights";
 import type { Payment, Plan } from "@/lib/data/types";
 import { getDb } from "@/server/db";
 import { merchantInsights, setIndexerClientForTests } from "@/server/insights";
@@ -97,10 +97,10 @@ describe("the Envio panel", () => {
       },
       status: async () => ({ progressBlock: 1300 }),
     } as unknown as IndexerClient);
-    const insights = await merchantInsights({ wallet: WALLET, sample: false, payments: [payment], plans: [plan] });
+    const insights = await merchantInsights({ wallet: WALLET, payments: [payment], plans: [plan] });
     expect(asked).toEqual([WALLET]);
     expect(insights?.indexer).toMatchObject({ source: "envio", progressBlock: 1300 });
-    const feed = getIndexedEvents({ sample: false, payments: [payment], plans: [plan], insights });
+    const feed = getIndexedEvents({ insights });
     expect(feed.source).toBe("live");
     if (feed.source !== "live") return;
     expect(feed.via).toBeUndefined();
@@ -114,22 +114,23 @@ describe("the Envio panel", () => {
       },
       status: async () => null,
     } as unknown as IndexerClient);
-    const insights = await merchantInsights({ wallet: WALLET, sample: false, payments: [payment], plans: [plan] });
-    const feed = getIndexedEvents({ sample: false, payments: [payment], plans: [plan], insights });
+    const insights = await merchantInsights({ wallet: WALLET, payments: [payment], plans: [plan] });
+    const feed = getIndexedEvents({ insights });
     // A fixed sentence on the dashboard; the error itself goes to the server log.
     expect(feed).toMatchObject({ source: "not_connected", reason: expect.stringContaining("The indexer didn't answer") });
     expect(JSON.stringify(feed)).not.toContain("indexer down");
   });
 
   it("falls back to the chain sync's events, labelled, without an indexer", async () => {
-    const insights = await merchantInsights({ wallet: WALLET, sample: false, payments: [payment], plans: [plan] });
-    const feed = getIndexedEvents({ sample: false, payments: [payment], plans: [plan], insights });
+    const insights = await merchantInsights({ wallet: WALLET, payments: [payment], plans: [plan] });
+    const feed = getIndexedEvents({ insights });
     expect(feed).toMatchObject({ source: "live", via: "chain-sync" });
   });
 
-  it("leaves a sample book to its labelled sample events", async () => {
-    expect(await merchantInsights({ wallet: WALLET, sample: true, payments: [payment], plans: [plan] })).toBeUndefined();
-    expect(getIndexedEvents({ sample: true, payments: [payment], plans: [plan] }).source).toBe("placeholder");
+  it("says the indexer isn't configured when the Overview has no insights, and invents nothing", () => {
+    const feed = getIndexedEvents({});
+    expect(feed).toMatchObject({ source: "not_connected", reason: expect.stringContaining("POLARIS_INDEXER_URL") });
+    expect(getUnderwritingReasons({}).source).toBe("not_connected");
   });
 });
 
@@ -156,8 +157,8 @@ describe("why buyers got credit", () => {
         ],
       },
     });
-    const insights = await merchantInsights({ wallet: WALLET, sample: false, payments: [payment], plans: [plan] });
-    const reasons = getUnderwritingReasons({ sample: false, plans: [plan], insights });
+    const insights = await merchantInsights({ wallet: WALLET, payments: [payment], plans: [plan] });
+    const reasons = getUnderwritingReasons({ insights });
     expect(reasons.source).toBe("live");
     if (reasons.source !== "live") return;
     expect(reasons.data.buyers).toBe(1);
@@ -171,8 +172,26 @@ describe("why buyers got credit", () => {
   });
 
   it("says nothing has reported until a decision exists", async () => {
-    const insights = await merchantInsights({ wallet: WALLET, sample: false, payments: [payment], plans: [plan] });
+    const insights = await merchantInsights({ wallet: WALLET, payments: [payment], plans: [plan] });
     expect(insights?.underwriting).toBeNull();
-    expect(getUnderwritingReasons({ sample: false, plans: [plan], insights }).source).toBe("not_connected");
+    expect(getUnderwritingReasons({ insights }).source).toBe("not_connected");
+  });
+});
+
+describe("the collections panel", () => {
+  it("says no run has reported until the workflow's heartbeat arrives", () => {
+    const run = getCollectionsRun({ plans: [plan], collector: { state: "stopped", lastPassAt: null, runner: "cre" } });
+    expect(run).toMatchObject({ source: "not_connected", reason: expect.stringContaining("Chainlink CRE") });
+    expect(getCollectionsRun({ plans: [plan] }).source).toBe("not_connected");
+  });
+
+  it("shows the workflow's last real report, and nothing it didn't report", () => {
+    const at = "2026-10-01T10:00:04.000Z";
+    const run = getCollectionsRun({ plans: [plan], collector: { state: "running", lastPassAt: at, runner: "cre" } });
+    expect(run.source).toBe("live");
+    if (run.source !== "live") return;
+    expect(run.data.lastRun).toMatchObject({ at, checked: 1, collected: null, collectedCents: null });
+    expect(run.data.nextRunAt).toBe("2026-10-01T10:01:04.000Z");
+    expect(run.data.history).toEqual([]);
   });
 });

@@ -24,7 +24,7 @@ import { ArrowUpFromLine, CalendarClock, Landmark, Zap } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Address, CopyAction, DrawerActions, ExplorerAction, PayoutStatusBadge, TxLink } from "@/components/dashboard/bits";
-import { DataModeNotice, LoadError, SampleBadge, StaleNotice } from "@/components/dashboard/common";
+import { DataModeNotice, LoadError, StaleNotice } from "@/components/dashboard/common";
 import { checkAddress, MoneyWidget } from "@/components/dashboard/money-widget";
 import { FigureRow, PageCoin, PageHead } from "@/components/dashboard/page-head";
 import { explorerTx } from "@/lib/chain";
@@ -33,7 +33,7 @@ import { formatDateTime, money, shortAddress } from "@/lib/data/format";
 import type { AutoPayouts, Payout } from "@/lib/data/types";
 import { useMerchant } from "@/lib/merchant-context";
 import { useAutoPayouts } from "@/lib/payouts";
-import { LIVE_REFRESH_MS, useDashboardData, useQuery, useReadiness, useSample, type QueryState } from "@/lib/session";
+import { LIVE_REFRESH_MS, useDashboardData, useQuery, useReadiness, type QueryState } from "@/lib/session";
 
 /** Payouts shown at a time in the history. */
 const HISTORY_PAGE = 10;
@@ -71,7 +71,6 @@ const COLUMNS: TableColumn<Payout>[] = [
 
 export function PayoutsView() {
   const { merchant } = useMerchant();
-  const sample = useSample();
   const payouts = useQuery((d) => d.getPayouts(), { refreshMs: LIVE_REFRESH_MS });
   const payments = useQuery((d) => d.listPayments(), { refreshMs: LIVE_REFRESH_MS });
   const [open, setOpen] = useState<Payout | null>(null);
@@ -102,7 +101,6 @@ export function PayoutsView() {
               caption="Available to withdraw"
               value={payouts.error && !state ? "—" : state ? <Money value={state.balanceCents / 100} /> : undefined}
               deltaLabel={state ? "AUSD on Monad" : undefined}
-              sample={sample.on}
               right={wallet ? <WalletPill address={wallet} label="payout account address" maxWidth={300} /> : null}
             />
             {payouts.error && !state ? <LoadError query={payouts as QueryState<unknown>} title="We couldn't load your balance" /> : null}
@@ -120,7 +118,7 @@ export function PayoutsView() {
           <AutoPayoutsPanel
             auto={state?.auto}
             wallet={wallet}
-            suggested={state?.history.find((p) => p.status !== "failed" && !p.sample)?.destination ?? null}
+            suggested={state?.history.find((p) => p.status !== "failed")?.destination ?? null}
             onChange={(auto) => payouts.mutate((s) => (s ? { ...s, auto } : s))}
             onPaidOut={payouts.reload}
           />
@@ -129,7 +127,6 @@ export function PayoutsView() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="flex items-center gap-2 text-[22px] leading-tight font-medium tracking-[-0.02em]">
                 History
-                {sample.on ? <SampleBadge /> : null}
               </h2>
               <span className="text-[14px] text-ui-muted">Every withdrawal and automatic payout</span>
             </div>
@@ -169,7 +166,7 @@ export function PayoutsView() {
         />
       </div>
 
-      <PayoutDrawer payout={open} sample={sample.on} onClose={() => setOpen(null)} />
+      <PayoutDrawer payout={open} onClose={() => setOpen(null)} />
     </>
   );
 }
@@ -199,7 +196,6 @@ function AutoPayoutsPanel({
   onChange: (a: AutoPayouts) => void;
   onPaidOut: () => void;
 }) {
-  const sample = useSample();
   const data = useDashboardData();
   const { enable, disable } = useAutoPayouts();
   // null until edited: the input shows the saved payout address, the same one
@@ -264,7 +260,6 @@ function AutoPayoutsPanel({
     <PanelCard
       id="automatic"
       title="Automatic payouts"
-      badge={sample.on ? <SampleBadge /> : undefined}
       subtitle="Sweep your balance every day, without signing each time"
       className="scroll-mt-6"
     >
@@ -347,7 +342,7 @@ function AutoPayoutsPanel({
   );
 }
 
-function PayoutDrawer({ payout, sample, onClose }: { payout: Payout | null; sample: boolean; onClose: () => void }) {
+function PayoutDrawer({ payout, onClose }: { payout: Payout | null; onClose: () => void }) {
   const [last, setLast] = useState<Payout | null>(payout);
   if (payout && payout !== last) setLast(payout);
   const p = payout ?? last;
@@ -357,13 +352,13 @@ function PayoutDrawer({ payout, sample, onClose }: { payout: Payout | null; samp
       p
         ? [
             { label: "Status", value: <PayoutStatusBadge status={p.status} /> },
-            { label: "To", value: <Address value={p.destination} label="destination address" explorer={!sample} /> },
+            { label: "To", value: <Address value={p.destination} label="destination address" /> },
             { label: "When", value: formatDateTime(p.createdAt) },
             { label: "Confirmed by", value: p.signed ? "Your payout account's signature" : "Not signed" },
-            { label: "Transaction", value: <TxLink hash={p.txHash} sample={sample} /> },
+            { label: "Transaction", value: <TxLink hash={p.txHash} /> },
           ]
         : [],
-    [p, sample],
+    [p],
   );
   return (
     <Drawer open={payout !== null} onOpenChange={(o) => !o && onClose()} title={title} description={p?.id}>
@@ -371,7 +366,6 @@ function PayoutDrawer({ payout, sample, onClose }: { payout: Payout | null; samp
         <Drawer.Body>
           <div className="flex items-center gap-3 pb-5">
             <TableName icon={<PayoutCoin p={p} size={40} />} title={title} sub={formatDateTime(p.createdAt)} />
-            {sample ? <SampleBadge className="ml-auto" /> : null}
           </div>
           <Money value={p.amountCents / 100} className="text-[44px] leading-none font-medium tracking-[-0.035em]" />
           <KeyValueGrid
@@ -392,7 +386,7 @@ function PayoutDrawer({ payout, sample, onClose }: { payout: Payout | null; samp
       ) : null}
       {p ? (
         <DrawerActions>
-          <ExplorerAction href={p.txHash && !sample ? explorerTx(p.txHash) : null} reason={sample ? "Sample: no transaction" : "Not on chain yet"}>
+          <ExplorerAction href={p.txHash ? explorerTx(p.txHash) : null} reason="Not on chain yet">
             View on explorer
           </ExplorerAction>
           <CopyAction value={p.destination} what="destination address">

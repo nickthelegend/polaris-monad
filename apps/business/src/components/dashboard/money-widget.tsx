@@ -32,14 +32,13 @@ import { useId, useMemo, useState, type ReactNode } from "react";
 import { getAddress, isAddress, zeroAddress } from "viem";
 
 import { PayoutStatusBadge } from "@/components/dashboard/bits";
-import { SampleBadge } from "@/components/dashboard/common";
 import { QrCode } from "@/components/qr";
 import { DataError, errorMessage } from "@/lib/data";
 import { MODE_LABEL, money, parseAmount, payInFourQuote, shortAddress } from "@/lib/data/format";
 import type { Address as Hex, PayMode, Payment, PaymentLink, Payout, PayoutsState } from "@/lib/data/types";
 import { useMerchant } from "@/lib/merchant-context";
 import { useWithdraw } from "@/lib/payouts";
-import { useDashboardData, useQuery, useReadiness, useSample, type QueryState } from "@/lib/session";
+import { useDashboardData, useQuery, useReadiness, type QueryState } from "@/lib/session";
 
 /** Polaris's fee on Pay now and each subscription charge; Pay in 4 costs the merchant nothing. */
 const FEE_BPS = 50;
@@ -181,7 +180,6 @@ export function MoneyWidget({
 
 function WithdrawPanel({ payouts, payments, onSwitch }: { payouts: QueryState<PayoutsState>; payments?: Payment[]; onSwitch: () => void }) {
   const { merchant } = useMerchant();
-  const sample = useSample();
   const blocker = useReadiness().withdraw;
   const withdraw = useWithdraw();
   const state = payouts.data;
@@ -360,12 +358,7 @@ function WithdrawPanel({ payouts, payments, onSwitch }: { payouts: QueryState<Pa
         </p>
       ) : null}
       <BalanceSummaryCard
-        label={
-          <span className="flex items-center gap-2">
-            Available balance
-            {sample.on ? <SampleBadge /> : null}
-          </span>
-        }
+        label="Available balance"
         value={<Money value={balance / 100} />}
         badge={
           change === null ? undefined : (
@@ -542,8 +535,6 @@ const WAYS: { mode: PayMode; label: string }[] = [
 function RequestPanel({ onCreated, onSwitch, secondary }: { onCreated?: (link: PaymentLink) => void; onSwitch: () => void; secondary?: ReactNode }) {
   const data = useDashboardData();
   const blocker = useReadiness().links;
-  const { reason } = useSample();
-  const sampleLinks = reason === "mock" || reason === "server";
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [modes, setModes] = useState<PayMode[]>(["now", "later"]);
@@ -651,7 +642,7 @@ function RequestPanel({ onCreated, onSwitch, secondary }: { onCreated?: (link: P
             }
           />
         </div>
-        {link ? <LinkReady link={link} blocker={blocker} sample={sampleLinks} /> : null}
+        {link ? <LinkReady link={link} blocker={blocker} /> : null}
       </div>
       {errorText ? (
         <p role="alert" className="px-1 text-[14px] text-ui-down">
@@ -697,13 +688,12 @@ function RequestPanel({ onCreated, onSwitch, secondary }: { onCreated?: (link: P
  * buttons under it stay put: the QR code, what it's for, the amount, and
  * the link with Copy and Open.
  */
-function LinkReady({ link, blocker, sample }: { link: PaymentLink; blocker: string | null; sample: boolean }) {
+function LinkReady({ link, blocker }: { link: PaymentLink; blocker: string | null }) {
   return (
     <div className="flex h-full min-w-0 flex-col rounded-ui-panel bg-ui-surface-1 p-5" aria-live="polite">
       <p className="flex items-center gap-2 text-[14px] text-ui-muted">
         <Check aria-hidden size={16} strokeWidth={2.25} className="text-ui-lime-text" />
         Link ready
-        {sample ? <SampleBadge className="ml-auto" /> : null}
       </p>
       <div className="mt-4 flex min-w-0 flex-1 items-center gap-5">
         {blocker ? null : (

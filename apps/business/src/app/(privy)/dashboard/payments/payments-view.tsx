@@ -27,14 +27,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Address, CopyAction, DrawerActions, ExplorerAction, ModeBadge, PaymentStatusBadge, TxLink, downloadCsv } from "@/components/dashboard/bits";
-import { DataModeNotice, LoadError, SampleBadge, StaleNotice } from "@/components/dashboard/common";
+import { DataModeNotice, LoadError, StaleNotice } from "@/components/dashboard/common";
 import { FigureRow, PageHead } from "@/components/dashboard/page-head";
 import { MODE_COLOR, PaymentName, paymentPill } from "@/components/dashboard/payment-bits";
 import { explorerTx } from "@/lib/chain";
 import { periodSummary } from "@/lib/data/analytics";
 import { formatDateTime, MODE_LABEL, money } from "@/lib/data/format";
 import type { PayMode, Payment } from "@/lib/data/types";
-import { LIVE_REFRESH_MS, useQuery, useSample, type QueryState } from "@/lib/session";
+import { LIVE_REFRESH_MS, useQuery, type QueryState } from "@/lib/session";
 
 type StatusFilter = "all" | "succeeded" | "failed";
 type ModeFilter = "all" | PayMode;
@@ -43,7 +43,6 @@ const PAGE = 40;
 
 export function PaymentsView() {
   const payments = useQuery((d) => d.listPayments(), { refreshMs: LIVE_REFRESH_MS });
-  const sample = useSample();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -123,7 +122,6 @@ export function PaymentsView() {
             delta={summary?.delta}
             deltaSuffix="vs the 30 days before"
             deltaLabel={summary && summary.delta === null ? "New" : undefined}
-            sample={sample.on}
           />
 
           {/* The table covers every payment, not the figure's 30 days, so its
@@ -227,7 +225,6 @@ export function PaymentsView() {
               label={
                 <span className="flex items-center gap-2">
                   Net to you, 30 days
-                  {sample.on ? <SampleBadge /> : null}
                 </span>
               }
               value={<Money value={summary.net / 100} />}
@@ -254,7 +251,7 @@ export function PaymentsView() {
         </div>
       </div>
 
-      <PaymentDrawer payment={open} sample={sample.on} onClose={() => setOpen(null)} />
+      <PaymentDrawer payment={open} onClose={() => setOpen(null)} />
     </>
   );
 }
@@ -323,7 +320,7 @@ function useSummary(payments: Payment[] | undefined) {
   return useMemo(() => (payments ? periodSummary(payments, { days: 30, now: openedAt }) : null), [payments, openedAt]);
 }
 
-function PaymentDrawer({ payment, sample, onClose }: { payment: Payment | null; sample: boolean; onClose: () => void }) {
+function PaymentDrawer({ payment, onClose }: { payment: Payment | null; onClose: () => void }) {
   const [last, setLast] = useState<Payment | null>(payment);
   if (payment && payment !== last) setLast(payment);
   const p = payment ?? last;
@@ -333,7 +330,6 @@ function PaymentDrawer({ payment, sample, onClose }: { payment: Payment | null; 
         <Drawer.Body>
           <div className="flex items-center gap-3 pb-5">
             <PaymentName p={p} sub />
-            {sample ? <SampleBadge className="ml-auto" /> : null}
           </div>
           <Money value={p.amountCents / 100} className="text-[44px] leading-none font-medium tracking-[-0.035em]" />
           <div className="mt-4 flex flex-wrap gap-2">
@@ -357,16 +353,16 @@ function PaymentDrawer({ payment, sample, onClose }: { payment: Payment | null; 
             items={[
               { label: "Date", value: formatDateTime(p.createdAt) },
               { label: "Order", value: p.orderId },
-              { label: "Buyer", value: <Address value={p.buyer} label="buyer's address" explorer={!sample} /> },
+              { label: "Buyer", value: <Address value={p.buyer} label="buyer's address" /> },
               { label: "Link", value: p.linkId ?? "Checkout" },
-              { label: "Transaction", value: <TxLink hash={p.txHash} sample={sample} /> },
+              { label: "Transaction", value: <TxLink hash={p.txHash} /> },
             ]}
           />
         </Drawer.Body>
       ) : null}
       {p ? (
         <DrawerActions>
-          <ExplorerAction href={p.txHash && !sample ? explorerTx(p.txHash) : null} reason={sample ? "Sample: no transaction" : "Not on chain yet"}>
+          <ExplorerAction href={p.txHash ? explorerTx(p.txHash) : null} reason="Not on chain yet">
             View transaction
           </ExplorerAction>
           {p.mode === "later" && p.status === "succeeded" ? (

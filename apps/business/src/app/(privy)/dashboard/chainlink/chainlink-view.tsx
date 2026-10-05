@@ -3,8 +3,8 @@
 import {
   CheckList,
   CodeBlock,
+  EmptyState,
   Meter,
-  Notice,
   RunList,
   Skeleton,
   StatusPill,
@@ -13,7 +13,7 @@ import {
   type RunItem,
   type StatusPillTone,
 } from "@polaris/ui";
-import { Clock, Globe, Radio, ShieldCheck, Sparkles, Workflow } from "lucide-react";
+import { Clock, Globe, Radio, ShieldCheck, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { LoadError, Panel, StaleNotice, useNow } from "@/components/dashboard/common";
@@ -29,13 +29,12 @@ import { useQuery, type QueryState } from "@/lib/session";
  * Monad. The risk guard's verdict and its checks, the pool-health feed it
  * publishes, and for each workflow its triggers and its latest reports, each
  * with the transaction that carried it. All read from the chain (the API's
- * chain sync and the guardian's views); on a server with nothing deployed, a
- * labelled sample.
+ * chain sync and the guardian's views); on a server with nothing deployed, it
+ * says so.
  */
 export function ChainlinkView() {
   const query = useQuery((d) => d.getChainlink(), { refreshMs: 15_000 });
   const data = query.data;
-  const sample = Boolean(data?.sample);
 
   return (
     <>
@@ -53,12 +52,6 @@ export function ChainlinkView() {
         description="Three Chainlink CRE workflows run Polaris's credit: they collect what buyers owe, underwrite new buyers from their wallet history, and guard the pool that pays you. Every figure here is read from the chain."
       />
       <StaleNotice queries={[query] as QueryState<unknown>[]} />
-      {sample ? (
-        <Notice tone="warn" className="mb-6" icon={<Sparkles />} title="Nothing is deployed on this server yet: this page shows sample data">
-          Every card marked Sample is invented, and no sample transaction links anywhere. The page fills with the workflows&apos; real reports
-          once the contracts are on Monad and a workflow writes one.
-        </Notice>
-      ) : null}
 
       {!data ? (
         query.error ? (
@@ -69,11 +62,17 @@ export function ChainlinkView() {
             <Skeleton shape="card" height={420} />
           </div>
         )
+      ) : !data.deployed ? (
+        <EmptyState
+          icon={<Workflow />}
+          title="Nothing is deployed on this server yet"
+          description="This server isn't connected to Polaris's contracts on Monad. The risk guard, the pool health feed and each workflow's reports appear here once it is and a workflow writes its first report."
+        />
       ) : (
         <>
           <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_356px] xl:grid-cols-[minmax(0,1fr)_404px]">
-            <GuardPanel guard={data.guard} sample={sample} />
-            <FeedPanel guard={data.guard} sample={sample} explorer={data.network?.explorerUrl ?? null} />
+            <GuardPanel guard={data.guard} />
+            <FeedPanel guard={data.guard} explorer={data.network?.explorerUrl ?? null} />
           </div>
 
           <h2 className="mt-14 text-[22px] leading-tight font-medium tracking-[-0.02em] sm:mt-16">Workflows</h2>
@@ -83,7 +82,7 @@ export function ChainlinkView() {
           </p>
           <div className="mt-5 grid gap-4">
             {data.workflows.map((w) => (
-              <WorkflowPanel key={w.key} workflow={w} sample={sample} />
+              <WorkflowPanel key={w.key} workflow={w} />
             ))}
           </div>
 
@@ -110,7 +109,7 @@ function DeliveryPanel({ data, className }: { data: ChainlinkOverview; className
   const d = data.delivery;
   const explorer = data.network?.explorerUrl ?? null;
   return (
-    <Panel title="How reports reach Monad" subtitle={deliveryLabel(d.forwarderKind)} sample={Boolean(data.sample)} className={className}>
+    <Panel title="How reports reach Monad" subtitle={deliveryLabel(d.forwarderKind)} className={className}>
       <dl className="mt-4 grid gap-x-8 gap-y-3 text-[14px] sm:grid-cols-2 xl:grid-cols-4">
         <Fact label="Network" value={data.network ? `${data.network.name} (${data.network.chainId})` : "Not configured"} />
         <Fact label="Forwarder" value={d.forwarder ? <TxLink hash={d.forwarder} href={explorer ? `${explorer}/address/${d.forwarder}` : null} kind="contract" /> : "—"} />
@@ -147,7 +146,7 @@ const STATE: Record<CreditGuard["state"], { title: string; tone: "lime" | "amber
 
 const DOT: Record<"lime" | "amber" | "neutral", string> = { lime: "bg-ui-lime", amber: "bg-ui-warn", neutral: "bg-ui-muted" };
 
-function GuardPanel({ guard, sample }: { guard: CreditGuard; sample: boolean }) {
+function GuardPanel({ guard }: { guard: CreditGuard }) {
   const now = useNow(5_000);
   const age = guardAgeSeconds(guard, now);
   const max = guard.maxAgeSeconds;
@@ -163,7 +162,7 @@ function GuardPanel({ guard, sample }: { guard: CreditGuard; sample: boolean }) 
       ? "Bad debt never falls: Polaris acknowledges it by hand, and only new losses count after that."
       : "It opens again as soon as the check passes.";
   return (
-    <Panel title="Risk guard" subtitle="polaris-guardian: whether new Pay in 4 plans may open" sample={sample}>
+    <Panel title="Risk guard" subtitle="polaris-guardian: whether new Pay in 4 plans may open">
       <div className="mt-5 flex items-start gap-3">
         <span aria-hidden className={cn("mt-2 size-2.5 shrink-0 rounded-full", DOT[state.tone], guard.state === "paused" && "animate-pulse")} />
         <div className="min-w-0">
@@ -236,7 +235,7 @@ function GuardPanel({ guard, sample }: { guard: CreditGuard; sample: boolean }) 
               The price is Chainlink&apos;s {feed.description} on Monad mainnet, read by the workflow: round{" "}
               <span className="ui-figure text-ui-text">{guard.attestation.priceRoundId}</span>
               {guard.attestation.priceUpdatedAt ? `, updated ${formatAgo(guard.attestation.priceUpdatedAt, now)}` : ""}, feed{" "}
-              <TxLink hash={feed.address} href={sample ? null : mainnetExplorer} kind="price feed" />.
+              <TxLink hash={feed.address} href={mainnetExplorer} kind="price feed" />.
             </>
           ) : (
             <>The price comes from a local stand-in feed ({feed.description}), not Chainlink: this is a local chain.</>
@@ -257,12 +256,12 @@ const [roundId, answer, , updatedAt] = await client.readContract({
 });
 // answer: dollars the pool can lend now, 8 decimals (0 while credit is paused)`;
 
-function FeedPanel({ guard, sample, explorer }: { guard: CreditGuard; sample: boolean; explorer: string | null }) {
+function FeedPanel({ guard, explorer }: { guard: CreditGuard; explorer: string | null }) {
   const now = useNow(15_000);
   const feed = guard.feed;
   const hasRound = feed && feed.roundId !== "0";
   return (
-    <Panel title="Pool health feed" subtitle="GuardianReceiver.latestRoundData()" sample={sample}>
+    <Panel title="Pool health feed" subtitle="GuardianReceiver.latestRoundData()">
       {!feed ? (
         <p className="mt-4 text-[14px] leading-relaxed text-ui-muted">No guardian is deployed on this network, so there is no feed to read.</p>
       ) : (
@@ -274,15 +273,13 @@ function FeedPanel({ guard, sample, explorer }: { guard: CreditGuard; sample: bo
             <Row label="Round" value={hasRound ? feed.roundId : "0"} />
             <Row label="Updated" value={feed.updatedAt ? formatAgo(feed.updatedAt, now) : "Never"} />
             <Row label="Decimals" value={String(feed.decimals)} />
-            {!sample ? <Row label="Contract" value={<TxLink hash={feed.address} href={explorer ? `${explorer}/address/${feed.address}` : null} kind="contract" />} /> : null}
+            <Row label="Contract" value={<TxLink hash={feed.address} href={explorer ? `${explorer}/address/${feed.address}` : null} kind="contract" />} />
           </dl>
           <p className="mt-4 text-[13px] leading-relaxed text-ui-muted">
             The pool&apos;s free cash when the report landed (read from the pool, not the report), at the attested AUSD/USD price; 0 while the
             verdict pauses credit. Computed by our CRE workflow; it is a Polaris attestation, not a Chainlink Data Feed or Proof of Reserve.
           </p>
-          {!sample ? (
-            <CodeBlock className="mt-4" aria-label="Reading the pool health feed" note="viem" samples={[{ key: "ts", label: "TypeScript", code: READ_SNIPPET(feed.address) }]} />
-          ) : null}
+          <CodeBlock className="mt-4" aria-label="Reading the pool health feed" note="viem" samples={[{ key: "ts", label: "TypeScript", code: READ_SNIPPET(feed.address) }]} />
         </>
       )}
     </Panel>
@@ -323,7 +320,7 @@ function tagFor(key: WorkflowKey, run: ChainlinkRun): { tag: string; tone: Statu
   return { tag: "Report", tone: "neutral" };
 }
 
-function WorkflowPanel({ workflow: w, sample }: { workflow: ChainlinkWorkflow; sample: boolean }) {
+function WorkflowPanel({ workflow: w }: { workflow: ChainlinkWorkflow }) {
   const now = useNow(1_000);
   const items: RunItem[] = w.runs.map((run) => {
     const line = describeRun(w.key, run);
@@ -342,7 +339,6 @@ function WorkflowPanel({ workflow: w, sample }: { workflow: ChainlinkWorkflow; s
     <Panel
       title={<span className="ui-figure">{w.name}</span>}
       subtitle={w.role}
-      sample={sample}
       action={w.receiver ? <TxLink hash={w.receiver} href={w.receiverUrl} kind="receiver contract" /> : undefined}
     >
       <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8">

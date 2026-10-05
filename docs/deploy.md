@@ -107,7 +107,6 @@ design: every page the browser loads carries them). Fill in:
   NEXT_PUBLIC_PRIVY_CLIENT_ID = ""                            # optional: a Privy app client for this origin
   NEXT_PUBLIC_PRIVY_PAYOUT_SIGNER_ID = ""                     # optional: automatic payouts (privy:setup-payouts)
   NEXT_PUBLIC_DEMO_SHOP_URL = "https://polaris-shop.vercel.app"   # SHOP: "See the demo shop"
-  NEXT_PUBLIC_CONSUMER_APP_URL = "https://polaris-app.vercel.app" # APP: where the sample book's links point
 ```
 
 (Or leave the file alone and pass `--build-arg NEXT_PUBLIC_PRIVY_APP_ID=…` to
@@ -379,7 +378,7 @@ the results as JSON; `--android-package <name>` requires the app's
 |---|---|
 | All four | `/` answers over HTTPS; `http://` redirects to HTTPS; HSTS; `nosniff` and no `X-Powered-By` |
 | The app | `/api/health`: a production build with no dev signer and no local demo switches; `NEXT_PUBLIC_POLARIS_API_URL` is BUSINESS; chain 10143; `NEXT_PUBLIC_RP_ID` is one the host may use (warns when unset); Privy's email option; pinned contracts are the deployment's; the app refuses to be framed; the web app manifest; `assetlinks.json` if served (or required) |
-| Business | `/api/health`: chain 10143 and all ten contracts equal to the deployment record; the relayer (fails when off, warns on the dev relayer); `POLARIS_CHECKOUT_ORIGIN` is APP; `POLARIS_PUBLIC_URL` is BUSINESS; nothing production needs is missing (listed with `--cron-secret`); a production build with no mock or local session; Privy configured, the same app in the bundle and on the server; "See the demo shop" is SHOP. `/api/health/ready`: ready, the store on a disk (fails in memory), the background loops running, the chain sync recent. `/api/public/network` answers. CORS: APP may call `/api/public` and `/api/relay`, another origin may not, SHOP may call `/api/v1/relay/payments`. `/api/me` and `/api/cron/tick` refuse requests without credentials |
+| Business | `/api/health`: chain 10143 and all ten contracts equal to the deployment record; the relayer (fails when off, warns on the dev relayer); `POLARIS_CHECKOUT_ORIGIN` is APP; `POLARIS_PUBLIC_URL` is BUSINESS; nothing production needs is missing (listed with `--cron-secret`); a production build with no local session; Privy configured, the same app in the bundle and on the server; "See the demo shop" is SHOP. `/api/health/ready`: ready, the store on a disk (fails in memory), the background loops running, the chain sync recent. `/api/public/network` answers. CORS: APP may call `/api/public` and `/api/relay`, another origin may not, SHOP may call `/api/v1/relay/payments`. `/api/me` and `/api/cron/tick` refuse requests without credentials |
 | The shop | `/api/health`: a production build; payments configured, through BUSINESS, opening the checkout at APP; `SHOP_URL` is SHOP; orders in Redis on Vercel (fails otherwise); the webhook refuses an unsigned event |
 | The landing page | It renders and links to APP and BUSINESS |
 | SDK presets | `polarispay-sdk`'s `MONAD_TESTNET` preset (`packages/sdk/src/deployments.ts`) equals the deployment record, and equals what BUSINESS serves at `/api/public/network`, so a shop on the SDK and the hosted checkout sign for the same contracts |
@@ -440,7 +439,6 @@ The `.env.example` in each app describes every variable in full.
 |---|---|---|---|
 | `NEXT_PUBLIC_PRIVY_APP_ID` | **required** | build (`[build.args]`) | The Privy app |
 | `NEXT_PUBLIC_DEMO_SHOP_URL` | advised | build | SHOP ("See the demo shop"; disabled without it) |
-| `NEXT_PUBLIC_CONSUMER_APP_URL` | optional | build | APP, for the sample book's links |
 | `NEXT_PUBLIC_PRIVY_CLIENT_ID`, `NEXT_PUBLIC_PRIVY_PAYOUT_SIGNER_ID`, `NEXT_PUBLIC_MONAD_TESTNET_RPC`, `NEXT_PUBLIC_AUSD_ADDRESS`, `NEXT_PUBLIC_AUSD_EIP712_NAME`, `NEXT_PUBLIC_AUSD_EIP712_VERSION` | optional | build | See `apps/business/.env.example` |
 | `PRIVY_APP_ID`, `PRIVY_APP_SECRET` | **required**, secret | runtime | Server-side sign-in verification (the same app as the build argument) |
 | `POLARIS_KEY_PEPPER` | **required**, secret | runtime | 32 random bytes, never changed afterwards |
@@ -463,7 +461,7 @@ The `.env.example` in each app describes every variable in full.
 | `UNDERWRITING_GATEWAY_URL`, `UNDERWRITING_API_TOKEN` | optional | runtime | The underwriting gateway, if deployed |
 | `PAY_IN_4_INTERVAL_SECONDS`, `PAY_IN_4_MIN_CENTS`, `PAY_IN_4_MAX_CENTS`, `POLARIS_SESSION_TTL_SECONDS` | optional | runtime | Checkout terms (weekly instalments by default) |
 | `RELAYER_MIN_TRANSFER_UNITS`, `RELAYER_MAX_GAS`, `RELAYER_MAX_FEE_GWEI`, `RELAYER_RECEIPT_TIMEOUT_MS` | optional | runtime | The relayer's own limits |
-| `POLARIS_DEV_MOCK_SESSION`, `POLARIS_LOCAL_SESSION_*`, `NEXT_PUBLIC_POLARIS_LOCAL_SESSION*`, `POLARIS_DISABLE_PRIVY`, `POLARIS_WEBHOOK_ALLOW_PRIVATE` | **never** | | Development and `pnpm demo:local` only (production ignores or refuses them) |
+| `POLARIS_LOCAL_SESSION_*`, `NEXT_PUBLIC_POLARIS_LOCAL_SESSION*`, `POLARIS_DISABLE_PRIVY`, `POLARIS_WEBHOOK_ALLOW_PRIVATE` | **never** | | Development and `pnpm demo:local` only (production ignores or refuses them) |
 
 ---
 

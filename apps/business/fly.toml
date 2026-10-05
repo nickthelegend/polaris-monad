@@ -26,7 +26,6 @@ kill_timeout = 30
     NEXT_PUBLIC_PRIVY_CLIENT_ID = ""
     NEXT_PUBLIC_PRIVY_PAYOUT_SIGNER_ID = ""
     NEXT_PUBLIC_DEMO_SHOP_URL = ""
-    NEXT_PUBLIC_CONSUMER_APP_URL = ""
 
 [env]
   # The Monad testnet deployment record the image carries

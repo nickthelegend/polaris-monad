@@ -119,7 +119,6 @@ function PrivyBridge({ children }: { children: ReactNode }) {
       logout,
       getAccessToken,
       retry,
-      mock: false,
       wallet,
     }),
     [ready, authenticated, timedOut, user, doLogin, logout, getAccessToken, retry, wallet],
@@ -138,7 +137,6 @@ export function UnconfiguredAuthProvider({ children }: { children: ReactNode }) 
       logout: async () => undefined,
       getAccessToken: async () => null,
       retry: () => window.location.reload(),
-      mock: false,
       wallet: {
         address: null,
         ready: false,

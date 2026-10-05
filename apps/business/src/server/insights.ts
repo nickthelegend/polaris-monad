@@ -19,8 +19,6 @@ import { getConfig } from "./env";
  * - "Why your buyers got credit": the reasons the CRE underwriting workflow's
  *   decisions carried for this merchant's Pay in 4 buyers (the facts the DON
  *   attested, explained by @polarispay/underwriting), each with its provider.
- *
- * Sample merchants get neither: their panels show the labelled sample book.
  */
 
 let clientOverride: IndexerClient | null = null;
@@ -164,8 +162,7 @@ async function underwritingReasons(plans: Plan[]): Promise<Insights["underwritin
   return { buyers: decided, reasons, averageLineCents: Math.round(lineCents / decided) };
 }
 
-export async function merchantInsights(input: { wallet: Address | null; sample: boolean; payments: Payment[]; plans: Plan[] }): Promise<Insights | undefined> {
-  if (input.sample) return undefined;
+export async function merchantInsights(input: { wallet: Address | null; payments: Payment[]; plans: Plan[] }): Promise<Insights | undefined> {
   const [indexer, underwriting] = await Promise.all([indexedEvents(input.wallet, input.payments, input.plans), underwritingReasons(input.plans)]);
   return { indexer, underwriting };
 }

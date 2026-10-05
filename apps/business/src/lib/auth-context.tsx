@@ -4,7 +4,7 @@ import { createContext, useContext } from "react";
 
 /**
  * The sign-in state every page reads, whichever way it is provided: Privy in
- * every real build, or the development-only mock session for screenshots.
+ * every real build, or `pnpm demo:local`'s local session in development.
  */
 export type AuthStatus =
   /** Privy is starting up. */
@@ -29,7 +29,7 @@ export type TypedDataInput = {
 /**
  * What the dashboard asks of the merchant's embedded wallet. Only the auth
  * provider touches Privy's wallet hooks, so pages work the same under the
- * development mock (where these refuse).
+ * local session (which signs with its own throwaway key).
  */
 export type WalletActions = {
   /** The embedded payout wallet, once Privy has created it. */
@@ -49,8 +49,6 @@ export type AuthState = {
   getAccessToken: () => Promise<string | null>;
   /** Reload after "unreachable". */
   retry: () => void;
-  /** True in the development-only mock session. */
-  mock: boolean;
   wallet: WalletActions;
 };
 
@@ -68,25 +66,11 @@ export function useOptionalAuth(): AuthState | null {
 }
 
 /**
- * The development-only mock session: `next dev` with POLARIS_DEV_MOCK_SESSION=1
- * (a merchant with a full, labelled sample book) or =empty (a merchant who has
- * just signed up: no payments, nothing connected). NODE_ENV is replaced at
- * build time, so in a production build this is the literal `false` and
- * everything behind it is removed as dead code; next.config also blanks the
- * variable outside development.
- */
-export const DEV_MOCK_SESSION =
-  process.env.NODE_ENV === "development" &&
-  (process.env.POLARIS_DEV_MOCK_SESSION === "1" || process.env.POLARIS_DEV_MOCK_SESSION === "empty");
-
-/**
  * `pnpm demo:local`'s signed-in dashboard: the demo merchant's real book on
  * a local chain, without Privy. The token is random per run and the server
  * accepts it only on a local chain in development (server/auth.ts
- * `localSession`); like the mock, it is the literal "" in a production build.
+ * `localSession`); it is the literal "" in a production build.
  */
 export const LOCAL_SESSION_TOKEN =
   process.env.NODE_ENV === "development" ? (process.env.NEXT_PUBLIC_POLARIS_LOCAL_SESSION ?? "") : "";
 
-/** The mock session shows the sample book (labelled "Sample" everywhere), not an empty one. */
-export const DEV_MOCK_SAMPLE = DEV_MOCK_SESSION && process.env.POLARIS_DEV_MOCK_SESSION !== "empty";

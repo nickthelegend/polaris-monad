@@ -3,7 +3,6 @@
 import { Coin, DeltaChip, DollarCoin, PairHeader, PolarisCoin, Skeleton, cn, type CoinTone } from "@polaris/ui";
 import type { ReactNode } from "react";
 
-import { SampleBadge } from "./common";
 
 /** A page's coin: a flat colour with a white glyph, like the reference's ETH coin. */
 export function PageCoin({ tone, children, size = 50 }: { tone: CoinTone; children: ReactNode; size?: number }) {
@@ -53,8 +52,8 @@ export function PageHead({
 }
 
 /**
- * Ref E's figure row: the big number with its delta chip (and the Sample
- * chip), and on the right the page's chips (a timeframe, a filter).
+ * Ref E's figure row: the big number with its delta chip, and on the right
+ * the page's chips (a timeframe, a filter).
  */
 export function FigureRow({
   value,
@@ -62,7 +61,6 @@ export function FigureRow({
   deltaSuffix,
   deltaLabel,
   deltaTitle,
-  sample,
   caption,
   right,
   className,
@@ -74,7 +72,6 @@ export function FigureRow({
   /** Replaces the chip's figure ("New"). */
   deltaLabel?: ReactNode;
   deltaTitle?: string;
-  sample?: boolean;
   /** A muted line over the figure ("Gross, last 30 days"). */
   caption?: ReactNode;
   right?: ReactNode;
@@ -93,7 +90,6 @@ export function FigureRow({
               {delta !== undefined || deltaLabel ? (
                 <DeltaChip value={delta ?? null} suffix={delta === null || delta === undefined ? undefined : deltaSuffix} label={deltaLabel} title={deltaTitle} />
               ) : null}
-              {sample ? <SampleBadge /> : null}
             </>
           )}
         </div>

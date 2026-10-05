@@ -24,13 +24,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Address, CopyAction, DrawerActions, ExplorerAction, PlanStateBadge } from "@/components/dashboard/bits";
-import { DataModeNotice, LoadError, SampleBadge, StaleNotice } from "@/components/dashboard/common";
+import { DataModeNotice, LoadError, StaleNotice } from "@/components/dashboard/common";
 import { FigureRow, PageCoin, PageHead } from "@/components/dashboard/page-head";
 import { BuyerCoin, ModeCoin } from "@/components/dashboard/payment-bits";
 import { explorerAddress } from "@/lib/chain";
 import { formatDate, formatDue, money, payInFourQuote, PLAN_INTERVAL_DAYS, shortAddress } from "@/lib/data/format";
 import type { Plan, PlanFilter } from "@/lib/data/types";
-import { LIVE_REFRESH_MS, useQuery, useSample, type QueryState } from "@/lib/session";
+import { LIVE_REFRESH_MS, useQuery, type QueryState } from "@/lib/session";
 
 const DAY = 86_400_000;
 /** Plans shown at a time; "Show more" adds another page. */
@@ -40,7 +40,6 @@ const EXAMPLE = payInFourQuote(200_00);
 
 export function PlansView() {
   const plans = useQuery((d) => d.listPlans(), { refreshMs: LIVE_REFRESH_MS });
-  const sample = useSample();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -100,7 +99,6 @@ export function PlansView() {
             caption="Still owed by buyers"
             value={s ? <Money value={s.outstanding / 100} /> : undefined}
             deltaLabel={s ? `${s.open} open ${s.open === 1 ? "plan" : "plans"}` : undefined}
-            sample={sample.on}
             right={
               <TimeframeChips<PlanFilter>
                 aria-label="Filter plans"
@@ -168,7 +166,6 @@ export function PlansView() {
               label={
                 <span className="flex items-center gap-2">
                   Paid to you up front
-                  {sample.on ? <SampleBadge /> : null}
                 </span>
               }
               value={<Money value={s.principal / 100} />}
@@ -192,7 +189,7 @@ export function PlansView() {
         <HowItWorks className="md:max-w-[560px] xl:hidden" />
       </div>
 
-      <PlanDrawer plan={open} sample={sample.on} onClose={() => setOpen(null)} />
+      <PlanDrawer plan={open} onClose={() => setOpen(null)} />
     </>
   );
 }
@@ -238,7 +235,6 @@ const COLUMNS: TableColumn<Plan>[] = [
         title={
           <span className="flex min-w-0 items-center gap-2">
             <span className="ui-figure truncate">{shortAddress(p.buyer, 6, 4)}</span>
-            {p.sample ? <SampleBadge className="shrink-0" /> : null}
           </span>
         }
         sub={
@@ -347,7 +343,7 @@ const STEP = {
   written_off: { icon: <X size={15} strokeWidth={2} />, well: "bg-ui-pill-red text-ui-pill-red-text", label: "Written off" },
 } as const;
 
-function PlanDrawer({ plan, sample, onClose }: { plan: Plan | null; sample: boolean; onClose: () => void }) {
+function PlanDrawer({ plan, onClose }: { plan: Plan | null; onClose: () => void }) {
   const [last, setLast] = useState<Plan | null>(plan);
   if (plan && plan !== last) setLast(plan);
   const p = plan ?? last;
@@ -357,7 +353,6 @@ function PlanDrawer({ plan, sample, onClose }: { plan: Plan | null; sample: bool
         <Drawer.Body>
           <div className="flex items-center gap-3 pb-5">
             <TableName icon={<ModeCoin mode="later" text={p.description} size={40} />} title={p.description} sub={`Opened ${formatDate(p.openedAt, true)}`} />
-            {sample ? <SampleBadge className="ml-auto" /> : null}
           </div>
           <p className="text-[14px] text-ui-muted">Still owed</p>
           <Money value={p.outstandingCents / 100} className="mt-1 text-[44px] leading-none font-medium tracking-[-0.035em]" />
@@ -406,7 +401,7 @@ function PlanDrawer({ plan, sample, onClose }: { plan: Plan | null; sample: bool
             size="sm"
             variant="raised"
             items={[
-              { label: "Buyer", value: <Address value={p.buyer} label="buyer's address" explorer={!sample} /> },
+              { label: "Buyer", value: <Address value={p.buyer} label="buyer's address" /> },
               { label: "Order", value: p.orderId },
               { label: "Collected by", value: "Chainlink CRE, every minute" },
             ]}
@@ -415,7 +410,7 @@ function PlanDrawer({ plan, sample, onClose }: { plan: Plan | null; sample: bool
       ) : null}
       {p ? (
         <DrawerActions>
-          <ExplorerAction href={sample ? null : explorerAddress(p.buyer)} reason="Sample: no account">
+          <ExplorerAction href={explorerAddress(p.buyer)} reason="No account">
             Buyer on explorer
           </ExplorerAction>
           <CopyAction value={p.buyer} what="buyer's address">

@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { GET as health, POST as healthPost } from "@/app/api/health/route";
 import { GET as listLinks, POST as createLink } from "@/app/api/links/route";
-import { PATCH as updateLink } from "@/app/api/links/[id]/route";
 import { GET as me } from "@/app/api/me/route";
 import { GET as overview } from "@/app/api/overview/route";
 import { GET as payoutsGet, POST as withdraw } from "@/app/api/payouts/route";
@@ -17,8 +16,8 @@ import { safeNext } from "@/lib/next-path";
 import { DEPLOYMENT, json, params, request, setupServer, signIn, type TestEnv } from "./helpers/env";
 
 /**
- * The web review's server findings: sample is a live condition, links that
- * can't work are refused, the health route keeps its problems private, a bad
+ * The web review's server findings: a server with no chain shows an empty
+ * book (never an invented one), links that can't work are refused, the health route keeps its problems private, a bad
  * cookie is a 401, and unsupported methods answer in JSON.
  */
 
@@ -33,48 +32,67 @@ beforeEach(() => {
   signIn({ userId: "did:privy:review", walletAddress: WALLET });
 });
 
-describe("sample data", () => {
-  it("ends when the server is connected to a chain, between two requests", async () => {
+describe("a server with no chain", () => {
+  it("shows the merchant an empty book, never an invented one, and the same merchant once the chain is connected", async () => {
     setupServer({ POLARIS_DEPLOYMENT_FILE: "does-not-exist.json", RELAYER_MODE: "off" });
     signIn({ userId: "did:privy:review", walletAddress: WALLET });
     const before = await json(await me(request("GET", "/api/me"), params({})));
-    expect(before.body.data.sample).toBe(true);
+    expect(before.status).toBe(200);
+    expect(before.body.data).not.toHaveProperty("sample");
 
-    // A sample withdrawal, recorded against the sample balance.
-    const sampleOut = await json(await withdraw(request("POST", "/api/payouts", { body: { amountCents: 100, destination: DESTINATION } }), params({})));
-    expect(sampleOut.status).toBe(201);
+    const empty = await json(await overview(request("GET", "/api/overview"), params({})));
+    expect(empty.body.data).toMatchObject({ balanceCents: 0, today: { count: 0, payments: [] }, exposure: { outstandingCents: 0, collectionRate: null } });
+    expect(empty.body.data).not.toHaveProperty("sample");
+    const nothingPaidOut = await json(await payoutsGet(request("GET", "/api/payouts"), params({})));
+    expect(nothingPaidOut.body.data).toMatchObject({ balanceCents: 0, history: [] });
 
-    // Connect the chain and reload the config: no restart, no new merchant.
-    process.env.POLARIS_DEPLOYMENT_FILE = DEPLOYMENT;
-    process.env.RELAYER_MODE = "local";
-    resetConfig();
-
-    const after = await json(await overview(request("GET", "/api/overview"), params({})));
-    expect(after.body.data.sample).toBe(false);
-    expect(after.body.data.merchant.sample).toBe(false);
-
-    const payouts = await json(await payoutsGet(request("GET", "/api/payouts"), params({})));
-    expect(payouts.body.data.history).toHaveLength(0);
-
-    // A real withdrawal now needs the payout wallet's signature.
+    // Nothing moves without the payout wallet's signature, chain or not.
     const unsigned = await json(await withdraw(request("POST", "/api/payouts", { body: { amountCents: 100, destination: DESTINATION } }), params({})));
     expect(unsigned.status).toBe(400);
     expect(unsigned.body.error.code).toBe("signature_required");
+
+    // Connect the chain and reload the config: no restart, the same merchant.
+    process.env.POLARIS_DEPLOYMENT_FILE = DEPLOYMENT;
+    process.env.RELAYER_MODE = "local";
+    resetConfig();
+    const after = await json(await me(request("GET", "/api/me"), params({})));
+    expect(after.body.data.publicId).toBe(before.body.data.publicId);
   });
 
-  it("marks every sample link, and a sample link can't be turned off (409, not 404)", async () => {
+  it("lists only the merchant's own links", async () => {
     setupServer({ POLARIS_DEPLOYMENT_FILE: "does-not-exist.json", RELAYER_MODE: "off" });
     signIn({ userId: "did:privy:review", walletAddress: WALLET });
-    await createLink(request("POST", "/api/links", { body: { ...LINK, modes: ["now"] } }), params({}));
+    const created = await json(await createLink(request("POST", "/api/links", { body: { ...LINK, modes: ["now"] } }), params({})));
     const links = await json(await listLinks(request("GET", "/api/links"), params({})));
-    const rows = links.body.data as { id: string; sample?: boolean }[];
-    expect(rows.filter((l) => !l.sample)).toHaveLength(1);
-    const sample = rows.find((l) => l.sample)!;
-    expect(sample).toBeTruthy();
+    expect((links.body.data as { id: string }[]).map((l) => l.id)).toEqual([created.body.data.id]);
+  });
 
-    const off = await json(await updateLink(request("PATCH", `/api/links/${sample.id}`, { body: { active: false } }), params({ id: sample.id })));
-    expect(off.status).toBe(409);
-    expect(off.body.error.code).toBe("sample_data");
+  it("clears an invented book an older build left behind: the flag and its withdrawals", async () => {
+    const db = getDb();
+    const { ensureMerchant } = await import("@/server/merchants");
+    const auth = { userId: "did:privy:review", walletAddress: WALLET, walletId: null, email: null, sessionId: "s" } as const;
+    const merchant = await ensureMerchant(auth);
+    await db.merchants.update(merchant.id, (m) => ({ ...m, sample: true, sampleBalanceCents: 1_000_00 }));
+    await db.payouts.insert({
+      id: "po_legacy",
+      merchantId: merchant.id,
+      kind: "manual",
+      state: "queued",
+      amountUnits: "1000000",
+      from: WALLET,
+      destination: DESTINATION,
+      authorizationNonce: null,
+      txHash: null,
+      error: null,
+      createdAt: new Date().toISOString(),
+      paidAt: null,
+      sample: true,
+    });
+
+    const payouts = await json(await payoutsGet(request("GET", "/api/payouts"), params({})));
+    expect(payouts.body.data.history).toEqual([]);
+    expect(await db.payouts.get("po_legacy")).toBeNull();
+    expect(await db.merchants.get(merchant.id)).toMatchObject({ sample: false, sampleBalanceCents: 0 });
   });
 });
 
