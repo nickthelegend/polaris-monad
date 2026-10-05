@@ -36,8 +36,8 @@ type HistoryWallet = { address: Address; signMessage(message: string): Promise<H
 /**
  * `pnpm demo:local` on a local chain (NEXT_PUBLIC_LOCAL_DEMO=1, chain 31337)
  * with no wallet in the browser: a throwaway key stands in for the buyer's
- * old wallet. The local CRE trigger gives it a sample persona's history
- * (fixtures, not Nansen), and the app says so. Never on any other chain.
+ * old wallet. The local CRE trigger reads its history from the live
+ * providers (it starts empty), and the app says so. Never on any other chain.
  */
 export const LOCAL_HISTORY_WALLET = process.env.NEXT_PUBLIC_LOCAL_DEMO === "1" && env.chainId === 31337;
 

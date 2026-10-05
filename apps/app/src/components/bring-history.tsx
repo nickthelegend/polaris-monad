@@ -96,7 +96,7 @@ export function BringHistorySheet({
             ) : null}
             {LOCAL_HISTORY_WALLET ? (
               <p className="text-[13px] leading-[1.45] text-ui-warn">
-                Local demo: with no wallet in this browser, a stand-in wallet signs, and a sample history (fixtures, not Nansen) is read for it.
+                Local demo: with no wallet in this browser, a stand-in wallet signs. Its history is read from the live providers, so it starts empty.
               </p>
             ) : null}
             {error ? (
