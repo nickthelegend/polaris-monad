@@ -59,8 +59,12 @@ Each task: objective · acceptance · verify · status.
   (incl. `test/zero-mock.test.ts`). Follow-up P1.7.
 - **P1.7 Boost and account digits.** `components/accounts.tsx` had invented
   card digits ("0095", "1122") and a Boost balance fixed at 0: read the
-  buyer's real collateral from `CollateralVault`, derive the digits. · IN
-  PROGRESS
+  buyer's real collateral from `CollateralVault`, derive the digits. · DONE
+  (6 Oct): Boost reads `lockedOf` (hidden without a vault); every face shows
+  the account's own digits; 69 app tests
+- **P1.8 Add to Boost / take out.** The app could not lock collateral,
+  though the relayer supports `lockCollateral`; without Nansen/Zerion keys
+  it is the real way to raise a limit. · IN PROGRESS
 - **P1.2 Business without the dev mock session.** Remove
   `POLARIS_DEV_MOCK_SESSION`, `components/auth/mock-auth.tsx`,
   `lib/data/sample.ts`, `chainlink-sample.ts` and the `placeholder` branches
