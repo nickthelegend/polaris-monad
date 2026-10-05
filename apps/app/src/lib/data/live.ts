@@ -411,8 +411,12 @@ export const liveData: PolarisData = {
     const network = getNetwork();
     const vault = network ? (await network).vault : null;
     if (!vault) return null;
-    const locked = owner ? await publicClient().readContract({ address: vault, abi: vaultAbi, functionName: "lockedOf", args: [owner] }) : 0n;
-    return { locked, updatedAt: Date.now() };
+    const client = publicClient();
+    const [locked, multiplier] = await Promise.all([
+      owner ? client.readContract({ address: vault, abi: vaultAbi, functionName: "lockedOf", args: [owner] }) : 0n,
+      client.readContract({ address: vault, abi: vaultAbi, functionName: "creditMultiplierBps" }),
+    ]);
+    return { locked, multiplierBps: Number(multiplier), vault, updatedAt: Date.now() };
   },
 
   async getCreditLine(owner): Promise<CreditLine> {

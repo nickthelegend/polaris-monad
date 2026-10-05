@@ -23,11 +23,12 @@ import {
   Ticks,
   TimeframeChips,
 } from "@polaris/ui";
-import { CalendarClock, Gauge, Info, Layers, TrendingUp } from "lucide-react";
+import { CalendarClock, Gauge, Info, Layers, Sparkles, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { MerchantAvatar } from "@/components/avatars";
+import { BoostSheet } from "@/components/boost-sheet";
 import { BringHistorySheet } from "@/components/bring-history";
 import { ConfirmSheet } from "@/components/confirm-sheet";
 import { CreditGuardLine } from "@/components/credit-guard-note";
@@ -35,7 +36,7 @@ import { CreditProvenance } from "@/components/credit-provenance";
 import { SuccessSheet } from "@/components/success-sheet";
 import { payEarly } from "@/lib/actions";
 import { useOwner } from "@/lib/account/hooks";
-import { getCreditLine, getPlans, getProfile, type Instalment, type Plan } from "@/lib/data";
+import { getBoost, getCreditLine, getPlans, getProfile, type Instalment, type Plan } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { inDays, relativeDay, shortDate } from "@/lib/dates";
 import { usd } from "@/lib/money";
@@ -73,8 +74,10 @@ export function CreditDesktop() {
   const owner = useOwner();
   const credit = useData(() => getCreditLine(owner), [owner]);
   const plans = useData(() => getPlans(owner), [owner]);
+  const boost = useData(() => getBoost(owner), [owner]);
   const [frame, setFrame] = useState<Frame>("1m");
   const [raising, setRaising] = useState(false);
+  const [boosting, setBoosting] = useState(false);
   const now = useNow();
 
   const series = useMemo(
@@ -206,11 +209,20 @@ export function CreditDesktop() {
             <SecondaryButton size="lg" block iconRight={<TrendingUp />} disabled={!c || c.historyLinked} onClick={() => setRaising(true)}>
               {c?.historyLinked ? "History linked" : "Raise your limit"}
             </SecondaryButton>
-            <SideNote>Your line grows as you pay on time. Pay in 4 is 10% a year, and each plan shows every payment and the interest before you confirm.</SideNote>
+            {boost.value ? (
+              <SecondaryButton size="lg" block iconRight={<Sparkles />} onClick={() => setBoosting(true)}>
+                Add to Boost
+              </SecondaryButton>
+            ) : null}
+            <SideNote>
+              Your line grows as you pay on time. Pay in 4 is 10% a year, and each plan shows every payment and the interest before you confirm.
+              {boost.value ? ` Boost: ${usd(boost.value.locked)} locked, which raises your line.` : ""}
+            </SideNote>
           </>
         }
       />
       <BringHistorySheet open={raising} onOpenChange={setRaising} credit={c} />
+      <BoostSheet open={boosting} onOpenChange={setBoosting} />
     </>
   );
 }

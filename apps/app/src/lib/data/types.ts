@@ -37,6 +37,10 @@ export type Balance = {
 export type Boost = {
   /** `CollateralVault.lockedOf(owner)`, base units (6 decimals). */
   locked: Micros;
+  /** `CollateralVault.creditMultiplierBps()`: 15000 means $1 locked adds up to $1.50 of limit. */
+  multiplierBps: number;
+  /** The vault's address, the spender of the permit that adds to Boost. */
+  vault: Address;
   updatedAt: number;
 };
 

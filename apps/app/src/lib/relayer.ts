@@ -1,5 +1,6 @@
 import type { Address, Hex, TypedDataDomain } from "viem";
 import { ApiError, api } from "./api";
+import { lockCollateralBody } from "./boost";
 import { receiptUrl } from "./chain";
 import { notifyDataChanged } from "./data/changes";
 import type { PaymentLink, Person } from "./data/types";
@@ -91,6 +92,12 @@ export type PayEarlyRequest = { planId: string; loanId: bigint; borrower: Addres
 export type ReauthorizeRequest = { buyer: Address; permit: Signed<Permit> };
 
 /**
+ * CollateralVault.lockWithPermit: add to Boost. The borrower's ERC-2612
+ * permit to the vault for exactly the amount (lib/boost.ts).
+ */
+export type LockCollateralRequest = { permit: Signed<Permit> };
+
+/**
  * PolarisSplit.createSplit: the organiser's CreateSplit. The split's words
  * never go to the relayer, only their hash (inside `creation`).
  */
@@ -116,6 +123,7 @@ export interface Relayer {
   transfer(request: TransferRequest): Promise<RelayReceipt>;
   payEarly(request: PayEarlyRequest): Promise<RelayReceipt>;
   reauthorize(request: ReauthorizeRequest): Promise<RelayReceipt>;
+  lockCollateral(request: LockCollateralRequest): Promise<RelayReceipt>;
 }
 
 export type RelayErrorReason = "insufficient-funds" | "over-limit" | "invalid-signature" | "already-settled" | "expired" | "unavailable";
@@ -153,6 +161,10 @@ const REASONS: Record<string, RelayErrorReason> = {
   split_expired: "expired",
   split_exists: "already-settled",
   split_unavailable: "unavailable",
+  insufficient_balance: "insufficient-funds",
+  wrong_amount: "invalid-signature",
+  collateral_unavailable: "unavailable",
+  transaction_reverted: "unavailable",
 };
 
 type RelayResponse = {
@@ -301,4 +313,5 @@ export const relayer: Relayer = {
       signature: repay.signature,
     }),
   reauthorize: ({ buyer, permit }) => relay({ type: "reauthorize", buyer, permit: permitBody(permit) }),
+  lockCollateral: ({ permit }) => relay(lockCollateralBody(permit)),
 };
