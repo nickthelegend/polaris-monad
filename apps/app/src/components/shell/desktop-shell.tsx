@@ -138,8 +138,9 @@ export function DesktopShell({ children }: { children: ReactNode }) {
 
 /**
  * "Dollar account ···· 4821": pressing it copies your receive link (the toast
- * shows the site and your name, never the account's address). Signed out it
- * is the sample's "Sample account ···· 2451", and pressing it starts yours.
+ * shows the site and your name, never the account's address). With no
+ * account on this device it says "Create your account", and pressing it
+ * starts yours.
  */
 function AccountPill() {
   const router = useRouter();
@@ -159,9 +160,9 @@ function AccountPill() {
       displayAddress={link?.shown}
       text={digits("Dollar account", accountDigits(address))}
       label="receive link"
-      // Before the device's account is read: no flash of the sample's number.
-      pendingText={state.status === "unknown" ? "Dollar account" : digits("Sample account", accountDigits(null))}
-      pendingLabel="Sample account. Create your own account"
+      // Before the device's account is read: no flash of "Create your account".
+      pendingText={state.status === "unknown" ? "Dollar account" : "Create your account"}
+      pendingLabel="Create your account"
       onPendingClick={state.status === "none" ? () => router.push("/onboard?next=/") : undefined}
       className="hidden xl:inline-flex"
       maxWidth={300}
@@ -198,7 +199,7 @@ function AccountMenu() {
     >
       <Menu.Header>
         <p className="truncate text-[16px] font-medium">{name}</p>
-        <p className="truncate text-[13px] text-ui-muted">{state.status === "none" ? "A sample account" : method}</p>
+        <p className="truncate text-[13px] text-ui-muted">{state.status === "none" ? "No account on this device" : method}</p>
       </Menu.Header>
       <Menu.Separator />
       {state.status === "none" ? (

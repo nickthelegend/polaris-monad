@@ -26,8 +26,8 @@ import type {
 } from "./types";
 
 /**
- * The real data source, used whenever Polaris for Business is configured
- * (`NEXT_PUBLIC_POLARIS_API_URL`): nothing here is sample data.
+ * The data source, Polaris for Business (`NEXT_PUBLIC_POLARIS_API_URL`)
+ * and the chain. Every figure is the account's own.
  *
  * - Balance: `AUSD.balanceOf(owner)`, read from the chain.
  * - Credit line: `GET /api/public/credit/{owner}`, which reads ScoreManager
@@ -47,7 +47,7 @@ import type {
  *   The split's words come from its link (lib/split.ts), never the API.
  *
  * Contacts are a local address book the app doesn't keep yet: none, rather
- * than sample people with made-up addresses someone could send real money to.
+ * than made-up people with addresses someone could send real money to.
  */
 
 const ausdAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);

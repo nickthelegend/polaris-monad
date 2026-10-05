@@ -28,7 +28,7 @@ import { type ActivityItem, getActivity } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { toNumber } from "@/lib/money";
 import { inPeriod, movesBalance, n, type Period, PERIOD_LABEL } from "@/lib/view";
-import { activityColumns, PageCoin, PageGrid, PageHead, SideColumn, SideNote, withSample } from "./bits";
+import { activityColumns, PageCoin, PageGrid, PageHead, SideColumn, SideNote } from "./bits";
 
 type Quick = "all" | "in" | "out" | "plans" | "links";
 
@@ -128,7 +128,6 @@ export function ActivityDesktop() {
               value={month ? <Money value={month.out} /> : undefined}
               deltaLabel={month ? `+${dollars(month.in)} in` : undefined}
               deltaTitle="What came into your dollar account in the same 30 days"
-              badge={withSample()}
               right={
                 <TimeframeChips<Quick>
                   aria-label="Show"
@@ -178,7 +177,6 @@ export function ActivityDesktop() {
                 <BalanceSummaryCard
                   label="Dollar account"
                   value={<Money value={n(balance.available)} />}
-                  badge={withSample()}
                   stats={[
                     { label: "In, 30 days", value: dollars(month.in) },
                     { label: "Out, 30 days", value: dollars(month.out) },

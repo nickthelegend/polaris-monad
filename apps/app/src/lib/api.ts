@@ -17,20 +17,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Whether this build talks to Polaris for Business. Without it the app has
+ * no data and nothing to carry a signature: it shows only that Polaris isn't
+ * configured (components/not-configured.tsx), and nothing can be signed.
+ */
 export function apiConfigured(): boolean {
   return Boolean(env.apiUrl);
 }
 
-/**
- * The offline demo: no Polaris API, so balances, plans and activity are
- * sample data and the relayer is a local stub whose "transactions" never
- * reach a chain. Screens must say so, and never link a made-up hash to the
- * explorer.
- */
-export const DEMO_MODE = !env.apiUrl;
+/** What a read or a signature without Polaris for Business throws. */
+export const NOT_CONFIGURED_MESSAGE = "Polaris isn't configured on this build, so nothing can be read or signed.";
 
 export async function api<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
-  if (!env.apiUrl) throw new ApiError(0, "not_configured", "Polaris isn't reachable from this build. Try again later.");
+  if (!env.apiUrl) throw new ApiError(0, "not_configured", NOT_CONFIGURED_MESSAGE);
   let res: Response;
   try {
     res = await fetch(`${env.apiUrl}${path}`, {

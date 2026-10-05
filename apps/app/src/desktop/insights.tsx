@@ -29,7 +29,7 @@ import { toNumber, usd } from "@/lib/money";
 import { spendingSeries } from "@/lib/series";
 import { useNow } from "@/lib/use-now";
 import { movesBalance, type Period, spendingByCategory, spentBetween } from "@/lib/view";
-import { PageCoin, PageGrid, PageHead, SideNote, withSample } from "./bits";
+import { PageCoin, PageGrid, PageHead, SideNote } from "./bits";
 
 const RANGES = [
   { value: "week", label: "1w", days: 7, title: "this week", versus: "vs last week" },
@@ -139,7 +139,6 @@ export function InsightsDesktop() {
               deltaLabel={data && data.delta === null ? "Nothing to compare yet" : undefined}
               // Spending: less is the good news, more turns amber.
               deltaGoodWhen="down"
-              badge={withSample()}
               right={
                 <TimeframeChips<Period>
                   aria-label="Period"
@@ -220,7 +219,7 @@ export function InsightsDesktop() {
               <BalanceSummaryCard
                 label={`${data.month.label} so far`}
                 value={<Money value={data.month.total} />}
-                badge={withSample(<StatusPill tone="neutral" size="sm">{data.month.count} {data.month.count === 1 ? "payment" : "payments"}</StatusPill>)}
+                badge={<StatusPill tone="neutral" size="sm">{data.month.count} {data.month.count === 1 ? "payment" : "payments"}</StatusPill>}
                 stats={[
                   { label: "A week, on average", value: money(data.month.perWeek) },
                   { label: "Most at", value: data.month.most ?? "Nowhere yet" },

@@ -36,7 +36,6 @@ import { longDate } from "@/lib/dates";
 import { getDomain, prefetchDomains } from "@/lib/domains";
 import { parseAmount, usd } from "@/lib/money";
 import { setPrefs, usePrefs } from "@/lib/prefs";
-import { RELAYER_IS_STUB } from "@/lib/relayer";
 import { cleanText, MAX_PEOPLE, planSplit, type SplitMemo, type SplitMode, type SplitRow, splitPrefill } from "@/lib/split";
 
 /**
@@ -92,12 +91,11 @@ type Form = ReturnType<typeof useSplitForm>;
  * Whether this network has PolarisSplit: false on a deployment that predates
  * it (the API reports no split contract), so the form says so before anyone
  * fills it in. null while it's being read, or if it can't be; the confirm
- * then says so instead. The offline demo's stub relayer always can.
+ * then says so instead.
  */
 function useSplitAvailable(): boolean | null {
-  const [available, setAvailable] = useState<boolean | null>(RELAYER_IS_STUB ? true : null);
+  const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
-    if (RELAYER_IS_STUB) return;
     let live = true;
     getDomain("split")
       .then((d) => live && setAvailable(d.verifyingContract !== zeroAddress))
