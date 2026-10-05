@@ -18,6 +18,7 @@ export const data: PolarisData = liveData;
 export const getProfile = (owner: Address | null) => data.getProfile(owner);
 export const getBalance = (owner: Address | null) => data.getBalance(owner);
 export const getCreditLine = (owner: Address | null) => data.getCreditLine(owner);
+export const getBoost = (owner: Address | null) => data.getBoost(owner);
 export const getCreditGuard = () => data.getCreditGuard();
 export const getPlans = (owner: Address | null) => data.getPlans(owner);
 export const getActivity = (owner: Address | null) => data.getActivity(owner);

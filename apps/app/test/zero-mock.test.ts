@@ -66,6 +66,14 @@ describe("no offline demo in the product", () => {
     assert.match(read("components/not-configured.tsx"), /Polaris isn't configured on this build/);
   });
 
+  it("gives every account face the account's own digits and Boost the vault's figure", () => {
+    const accounts = read("components/accounts.tsx");
+    assert.doesNotMatch(accounts, /last4: "/);
+    assert.doesNotMatch(accounts, /balance: 0\b/);
+    assert.match(accounts, /balance: n\(boost\.value\.locked\)/);
+    assert.match(read("lib/data/live.ts"), /functionName: "lockedOf"/);
+  });
+
   it("serves the component gallery in development only", () => {
     assert.match(read("app/gallery/page.tsx"), /if \(process\.env\.NODE_ENV === "production"\) notFound\(\);/);
   });

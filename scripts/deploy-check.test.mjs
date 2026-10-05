@@ -248,11 +248,13 @@ describe("the app", () => {
     assert.equal(status("app", "rp-id"), WARN);
   });
 
-  it("fails the offline demo build (no API)", async () => {
-    const { status } = await run((s) => {
+  it("fails a build without the API, which only says Polaris isn't configured", async () => {
+    const { status, find } = await run((s) => {
       s.app.apiUrl = null;
     });
     assert.equal(status("app", "api-url"), FAIL);
+    assert.match(find("app", "api-url")[0].message, /Polaris isn't configured on this build/);
+    assert.doesNotMatch(find("app", "api-url")[0].message, /offline demo/);
   });
 
   it("fails a pinned contract that isn't the deployment's", async () => {

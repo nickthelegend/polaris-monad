@@ -78,7 +78,11 @@ a local Hardhat node also set `NEXT_PUBLIC_CHAIN_ID=31337` and
 for a network other than the one it was built for.
 
 Everything on screen is the account's own (`src/lib/data/live.ts`):
-the balance is `AUSD.balanceOf` read from the chain; plans, subscriptions and
+the balance is `AUSD.balanceOf` read from the chain; Boost is
+`CollateralVault.lockedOf`, read from the chain at the vault
+`/api/public/network` reports (no vault, no Boost; the app shows what is
+locked and has no way to lock more yet: the relayer's `lockCollateral` is
+not wired to a screen); plans, subscriptions and
 activity come from `/api/public/buyers/{address}` (the API's records of chain
 events); the credit line, score and reasons from `/api/public/credit/{address}`
 (ScoreManager and the CRE workflow's explained decision); a send link's state

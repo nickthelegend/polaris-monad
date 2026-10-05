@@ -39,7 +39,7 @@ export function CardsDesktop() {
   const owner = useOwner();
   const profile = useData(() => getProfile(owner), [owner]);
   const activity = useData(() => getActivity(owner), [owner]);
-  const { accounts, selected, balance, credit } = useAccounts();
+  const { accounts, selected, balance, credit, boost } = useAccounts();
   const open = (href: string) => router.push(href, { scroll: false });
   const dollar = accounts.find((a) => a.id === "dollar");
   // The same change, over the same week, as Home.
@@ -134,7 +134,7 @@ export function CardsDesktop() {
             ) : (
               <Skeleton shape="card" height={264} />
             )}
-            {balance && credit ? (
+            {balance && credit && boost !== undefined ? (
               <BalanceSummaryCard
                 className="mt-1"
                 label="Dollar account"
@@ -148,7 +148,7 @@ export function CardsDesktop() {
                 }
                 stats={[
                   { label: "Pay later", value: usd(credit.available) },
-                  { label: "Boost", value: "$0.00" },
+                  ...(boost ? [{ label: "Boost", value: usd(boost.locked) }] : []),
                   { label: "Fees", value: "None" },
                 ]}
               />

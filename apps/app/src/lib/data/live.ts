@@ -1,18 +1,21 @@
-import { type Address, getAddress, type Hex, parseAbi, zeroAddress } from "viem";
+import { type Address, getAddress, type Hex, zeroAddress } from "viem";
 import { accountCreatedAt } from "../account";
 import { api } from "../api";
 import { type ApiCreditGuard, toGuardView } from "../credit-guard";
 import { publicClient } from "../chain";
 import { resolveContract } from "../domains";
+import { getNetwork } from "../network";
 import type { Micros } from "../money";
 import { prefsName } from "../prefs";
 import { pairReceipts, type ReceiptIndexEntry } from "../receipts/pair";
 import { knownSplit, shareLabel } from "../split";
 import { dataGeneration, hasDataListeners, notifyDataChanged, onDataChanged } from "./changes";
+import { ausdAbi, sendAbi, vaultAbi } from "./reads";
 import { getRemotePaymentLink } from "./remote";
 import type {
   ActivityItem,
   Balance,
+  Boost,
   CreditGuardView,
   CreditLine,
   Instalment,
@@ -30,6 +33,9 @@ import type {
  * and the chain. Every figure is the account's own.
  *
  * - Balance: `AUSD.balanceOf(owner)`, read from the chain.
+ * - Boost: `CollateralVault.lockedOf(owner)`, read from the chain, at the
+ *   vault Polaris for Business's deployment record reports. No vault on the
+ *   network: no Boost.
  * - Credit line: `GET /api/public/credit/{owner}`, which reads ScoreManager
  *   (`creditLimitOf`, the score) and PolarisLoanEngine (`activeDebtOf`) now,
  *   and carries the CRE workflow's decision with its reasons, each from the
@@ -50,11 +56,6 @@ import type {
  * than made-up people with addresses someone could send real money to.
  */
 
-const ausdAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
-const sendAbi = parseAbi([
-  "function linkOf(address linkKey) view returns ((address sender, uint128 amount, uint64 expiresAt))",
-  "function keyUsed(address linkKey) view returns (bool)",
-]);
 
 type ApiMerchant = { id: string | null; name: string; address: Address };
 
@@ -404,6 +405,14 @@ export const liveData: PolarisData = {
     const ausd = await resolveContract("ausd");
     const available = ausd === zeroAddress ? 0n : await publicClient().readContract({ address: ausd, abi: ausdAbi, functionName: "balanceOf", args: [owner] });
     return { available, updatedAt: Date.now() };
+  },
+
+  async getBoost(owner): Promise<Boost | null> {
+    const network = getNetwork();
+    const vault = network ? (await network).vault : null;
+    if (!vault) return null;
+    const locked = owner ? await publicClient().readContract({ address: vault, abi: vaultAbi, functionName: "lockedOf", args: [owner] }) : 0n;
+    return { locked, updatedAt: Date.now() };
   },
 
   async getCreditLine(owner): Promise<CreditLine> {
