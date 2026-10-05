@@ -288,8 +288,10 @@ the business (the payout account registers itself), then in **Developers**:
 - note the payout address (Settings), the shop's `POLARIS_MERCHANT_ADDRESS`.
 
 **4.2 Create the project**: as in step 2 with **Root Directory** `apps/shop`.
-Its build builds `polarispay-sdk` first and then proves no dev mock shipped
-(`scripts/assert-no-dev-mock.mjs`).
+Its build builds `polarispay-sdk` first and then proves the build serves only
+the store's own API routes (`apps/shop/scripts/assert-api-routes.mjs`). The
+shop pays only through Polaris for Business: until the variables below are
+set, its checkout says payments aren't configured.
 
 **4.3 Connect Redis**: the project's **Storage** tab → **Create Database** →
 **Upstash for Redis** (free plan) → connect it to this project. That adds
@@ -378,7 +380,7 @@ the results as JSON; `--android-package <name>` requires the app's
 | All four | `/` answers over HTTPS; `http://` redirects to HTTPS; HSTS; `nosniff` and no `X-Powered-By` |
 | The app | `/api/health`: a production build with no dev signer and no local demo switches; `NEXT_PUBLIC_POLARIS_API_URL` is BUSINESS; chain 10143; `NEXT_PUBLIC_RP_ID` is one the host may use (warns when unset); Privy's email option; pinned contracts are the deployment's; the app refuses to be framed; the web app manifest; `assetlinks.json` if served (or required) |
 | Business | `/api/health`: chain 10143 and all ten contracts equal to the deployment record; the relayer (fails when off, warns on the dev relayer); `POLARIS_CHECKOUT_ORIGIN` is APP; `POLARIS_PUBLIC_URL` is BUSINESS; nothing production needs is missing (listed with `--cron-secret`); a production build with no mock or local session; Privy configured, the same app in the bundle and on the server; "See the demo shop" is SHOP. `/api/health/ready`: ready, the store on a disk (fails in memory), the background loops running, the chain sync recent. `/api/public/network` answers. CORS: APP may call `/api/public` and `/api/relay`, another origin may not, SHOP may call `/api/v1/relay/payments`. `/api/me` and `/api/cron/tick` refuse requests without credentials |
-| The shop | `/api/health`: a production build with no dev mock; payments on, through BUSINESS, opening the checkout at APP; `SHOP_URL` is SHOP; orders in Redis on Vercel (fails otherwise); the dev mock's routes are gone; the webhook refuses an unsigned event |
+| The shop | `/api/health`: a production build; payments configured, through BUSINESS, opening the checkout at APP; `SHOP_URL` is SHOP; orders in Redis on Vercel (fails otherwise); the webhook refuses an unsigned event |
 | The landing page | It renders and links to APP and BUSINESS |
 | SDK presets | `polarispay-sdk`'s `MONAD_TESTNET` preset (`packages/sdk/src/deployments.ts`) equals the deployment record, and equals what BUSINESS serves at `/api/public/network`, so a shop on the SDK and the hosted checkout sign for the same contracts |
 
