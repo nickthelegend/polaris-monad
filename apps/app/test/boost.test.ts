@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { getAddress, hashTypedData, recoverTypedDataAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
-import { BOOST_MIN, boostAmountProblem, boostRaise, buildBoostPermit, lockCollateralBody } from "../src/lib/boost.ts";
+import { BOOST_MIN, boostAmountProblem, boostPerDollar, boostRaise, boostTerms, buildBoostPermit, lockCollateralBody } from "../src/lib/boost.ts";
 import { PERMIT_TYPE } from "../src/lib/sign/types.ts";
 
 /**
@@ -78,9 +78,57 @@ describe("what the amount sheet accepts", () => {
     assert.equal(boostAmountProblem(USD(5), undefined), null);
   });
 
-  it("says what a dollar adds at the vault's multiplier", () => {
-    assert.equal(boostRaise(USD(100)), USD(150));
-    assert.equal(boostRaise(USD(100), 10_000), USD(100));
-    assert.equal(boostRaise(USD(1), 15_000), USD(1.5));
+});
+
+/**
+ * What the sheet says an amount adds, mirroring ScoreManager.creditLimitOf:
+ * base + creditBoostOf (locked × multiplier), capped at lockedOf for a
+ * secured-only account (declined, or not underwritten while underwriting is
+ * required; the API's `boostAtFaceValue`).
+ */
+describe("what Boost adds to the limit", () => {
+  // ScoreManager's limit for a given lock, as the contracts compute it.
+  const limitOf = (base: bigint, locked: bigint, bps: number, faceValue: boolean) => {
+    const boost = (locked * BigInt(bps)) / 10_000n;
+    return base + (faceValue && boost > locked ? locked : boost);
+  };
+
+  it("at face value for a secured-only account: $351 raises the limit by exactly $351 (the e2e run)", () => {
+    const terms = { multiplierBps: 15_000, atFaceValue: true };
+    assert.equal(boostRaise(USD(351), terms), USD(351));
+    assert.equal(boostRaise(USD(351), { ...terms, locked: USD(40) }), USD(351));
+    assert.equal(boostPerDollar(terms), USD(1));
+    // A multiplier under 100% still applies: the cap is a ceiling, not a floor.
+    assert.equal(boostRaise(USD(100), { multiplierBps: 8_000, atFaceValue: true }), USD(80));
+  });
+
+  it("at the vault's multiplier for an account with a line of its own: $351 raises it by $526.50", () => {
+    const terms = { multiplierBps: 15_000, atFaceValue: false };
+    assert.equal(boostRaise(USD(351), terms), USD(526.5));
+    assert.equal(boostRaise(USD(100), { multiplierBps: 10_000, atFaceValue: false }), USD(100));
+    assert.equal(boostPerDollar(terms), USD(1.5));
+  });
+
+  it("is the chain's own difference, to the micro-dollar, whatever is locked already", () => {
+    for (const faceValue of [true, false]) {
+      for (const bps of [8_000, 10_000, 12_345, 15_000]) {
+        for (const [locked, amount] of [[0n, USD(351)], [1n, 1n], [3n, 7n], [USD(12.345671), USD(0.1)], [USD(1_000), USD(99.999999)]] as const) {
+          const raise = boostRaise(amount, { multiplierBps: bps, atFaceValue: faceValue, locked });
+          assert.equal(raise, limitOf(USD(200), locked + amount, bps, faceValue) - limitOf(USD(200), locked, bps, faceValue), `${faceValue} ${bps} ${locked} ${amount}`);
+        }
+      }
+    }
+    assert.equal(boostRaise(0n, { multiplierBps: 15_000, atFaceValue: false }), 0n);
+  });
+
+  it("names no raise until both the vault and ScoreManager's rule are known", () => {
+    const boost = { locked: USD(40), multiplierBps: 15_000 };
+    assert.equal(boostTerms(undefined, { boostAtFaceValue: true }), null);
+    assert.equal(boostTerms(null, { boostAtFaceValue: true }), null);
+    assert.equal(boostTerms(boost, undefined), null);
+    // The API couldn't read the chain (or is older): unknown, so no figure.
+    assert.equal(boostTerms(boost, { boostAtFaceValue: null }), null);
+    assert.deepEqual(boostTerms(boost, { boostAtFaceValue: true }), { multiplierBps: 15_000, atFaceValue: true, locked: USD(40) });
+    assert.deepEqual(boostTerms(boost, { boostAtFaceValue: false }), { multiplierBps: 15_000, atFaceValue: false, locked: USD(40) });
   });
 });

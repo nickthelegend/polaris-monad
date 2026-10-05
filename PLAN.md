@@ -67,6 +67,9 @@ Each task: objective · acceptance · verify · status.
   it is the real way to raise a limit. · DONE for Add (6 Oct): one Face ID
   confirm signs an AUSD permit to the vault and relays `lockCollateral`; the
   sheet shows the new Boost and limit read back from the chain; 75 app tests.
+  The raise it names is exact (6 Oct): face value for a secured-only
+  account, the vault's multiplier otherwise, from the credit API's
+  `boostAtFaceValue` (ScoreManager's own rule); no figure while that is unknown.
   Take out: BLOCKED (contract): `CollateralVault.withdraw` pays only the
   caller, so a buyer with no MON can't, and the relayer can't on their
   behalf; needs a signed withdraw and a redeploy (team decision)

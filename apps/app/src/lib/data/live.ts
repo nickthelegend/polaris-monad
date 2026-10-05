@@ -37,9 +37,10 @@ import type {
  *   vault Polaris for Business's deployment record reports. No vault on the
  *   network: no Boost.
  * - Credit line: `GET /api/public/credit/{owner}`, which reads ScoreManager
- *   (`creditLimitOf`, the score) and PolarisLoanEngine (`activeDebtOf`) now,
- *   and carries the CRE workflow's decision with its reasons, each from the
- *   provider behind it (Nansen, Zerion).
+ *   (`creditLimitOf`, the score, whether Boost counts at face value) and
+ *   PolarisLoanEngine (`activeDebtOf`) now, and carries the CRE workflow's
+ *   decision with its reasons, each from the provider behind it (Nansen,
+ *   Zerion).
  * - Plans, subscriptions, activity: `GET /api/public/buyers/{owner}`, the
  *   records the API's chain sync keeps from PlanOpened, PaymentMade and the
  *   subscription events, and every other dollar in or out of the account
@@ -60,7 +61,15 @@ import type {
 type ApiMerchant = { id: string | null; name: string; address: Address };
 
 type CreditStatus = {
-  onChain: { underwritten: boolean; declined: boolean; score: number; creditLimitUnits: string; activeDebtUnits?: string } | null;
+  onChain: {
+    underwritten: boolean;
+    declined: boolean;
+    score: number;
+    creditLimitUnits: string;
+    activeDebtUnits?: string;
+    /** ScoreManager's secured-only rule: Boost counts at face value. Missing from an older API. */
+    boostAtFaceValue?: boolean;
+  } | null;
   decision: {
     status: "applied" | "refused" | "thin";
     score?: number | null;
@@ -429,6 +438,7 @@ export const liveData: PolarisData = {
       nextPayment: null,
       reasons: [],
       historyLinked: false,
+      boostAtFaceValue: null,
       openingCap: OPENING_CAP,
       openedAt: null,
       openingScore: null,
@@ -460,6 +470,8 @@ export const liveData: PolarisData = {
       nextPayment,
       reasons,
       historyLinked: Boolean(status.decision?.linkedWallet),
+      // Unknown (no chain read, or an older API): null, so no screen names a raise.
+      boostAtFaceValue: typeof status.onChain?.boostAtFaceValue === "boolean" ? status.onChain.boostAtFaceValue : null,
       // ScoreManager caps an opening line at $1,000; paying on time raises it from there.
       openingCap: limit > OPENING_CAP ? limit : OPENING_CAP,
       // The line and its score start at the CRE decision that opened them.

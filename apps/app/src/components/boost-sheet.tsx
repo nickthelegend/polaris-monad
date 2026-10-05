@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { addToBoost } from "@/lib/actions";
 import { useAccountState } from "@/lib/account/hooks";
-import { boostAmountProblem, boostRaise } from "@/lib/boost";
+import { boostAmountProblem, boostRaise, boostTerms } from "@/lib/boost";
 import { getBoost, getCreditLine } from "@/lib/data";
 import { notifyDataChanged } from "@/lib/data/changes";
 import { prefetchDomains } from "@/lib/domains";
@@ -78,7 +78,9 @@ export function BoostSheet({ open, onOpenChange }: { open: boolean; onOpenChange
 
   const amount = parseAmount(value || "0") ?? 0n;
   const available = balance?.available;
-  const multiplier = boost?.multiplierBps;
+  // The vault's multiplier and ScoreManager's face-value rule; null while either is unknown.
+  const terms = boostTerms(boost, credit);
+  const raise = terms && amount > 0n ? boostRaise(amount, terms) : null;
   // A device with no account yet has nothing to lock: Add money first.
   const empty = available === 0n || state.status === "none";
   const problem = value ? boostAmountProblem(amount, available) : null;
@@ -86,8 +88,8 @@ export function BoostSheet({ open, onOpenChange }: { open: boolean; onOpenChange
 
   const hint = problem
     ? problem
-    : amount > 0n && multiplier !== undefined
-      ? `Raises your limit by up to ${usd(boostRaise(amount, multiplier))}`
+    : raise !== null
+      ? `Raises your limit by ${usd(raise)}`
       : available !== undefined
         ? `Available ${usd(available)}`
         : " ";
@@ -160,8 +162,8 @@ export function BoostSheet({ open, onOpenChange }: { open: boolean; onOpenChange
         title={`Add ${usd(amount, { trim: true })} to Boost`}
         summary={
           <>
-            It moves from your dollar account into Boost, where it raises your Pay later limit by up to{" "}
-            {usd(boostRaise(amount, multiplier), { trim: true })}. Taking it out isn&apos;t in the app yet.
+            It moves from your dollar account into Boost, where it raises your Pay later limit
+            {raise !== null ? ` by ${usd(raise, { trim: true })}` : ""}. Taking it out isn&apos;t in the app yet.
           </>
         }
         busyLabel="Adding…"

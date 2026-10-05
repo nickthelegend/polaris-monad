@@ -7,7 +7,8 @@ import { type Micros, usd } from "./money.ts";
 /**
  * Boost: dollars the buyer locks in CollateralVault, which ScoreManager adds
  * to their Pay later limit (`creditLimitOf` = base + `creditBoostOf`, capped
- * at face value for an account with no unsecured line of its own).
+ * at face value for an account with no unsecured line of its own, which the
+ * API reports as `boostAtFaceValue`).
  *
  * Adding to Boost is one ERC-2612 permit on the dollar (spender: the vault,
  * value: exactly the amount), which Polaris for Business's relayer carries to
@@ -32,9 +33,6 @@ export const BOOST_MIN: Micros = 100_000n;
 /** How long the permit stays good. The relayer refuses one more than three hours ahead. */
 export const BOOST_PERMIT_SECONDS = 30n * 60n;
 
-/** The vault's default `creditMultiplierBps`: $1 locked adds up to $1.50 of limit. */
-export const DEFAULT_MULTIPLIER_BPS = 15_000;
-
 /**
  * Why this amount can't be added, in the buyer's words, or null when it can.
  * `available` is the dollar balance (undefined while it loads).
@@ -46,13 +44,54 @@ export function boostAmountProblem(amount: Micros, available: Micros | undefined
   return null;
 }
 
+/** How ScoreManager counts this account's Boost. */
+export type BoostTerms = {
+  /** `CollateralVault.creditMultiplierBps()`. */
+  multiplierBps: number;
+  /**
+   * ScoreManager's secured-only rule (`CreditLine.boostAtFaceValue`): the
+   * boost is capped at what was locked, `min(creditBoostOf, lockedOf)`.
+   */
+  atFaceValue: boolean;
+  /** `CollateralVault.lockedOf(owner)` before this amount; 0 when not known. */
+  locked?: Micros;
+};
+
+/** The boost `ScoreManager.creditLimitOf` adds for `locked`, exactly as the contracts compute it. */
+function boostOf(locked: Micros, multiplierBps: number, atFaceValue: boolean): Micros {
+  const boost = (locked * BigInt(multiplierBps)) / 10_000n; // CollateralVault.creditBoostOf
+  return atFaceValue && boost > locked ? locked : boost;
+}
+
 /**
- * What `amount` adds to the limit at most: `CollateralVault.creditBoostOf`'s
- * rule (amount × multiplier). ScoreManager gives less (face value) to an
- * account it lends to only against collateral, so the app says "up to".
+ * What locking `amount` more adds to the limit: the difference in the boost
+ * `ScoreManager.creditLimitOf` adds, before and after (the base limit doesn't
+ * move). Face value for an account with no unsecured line of its own (the
+ * amount itself), else amount × the vault's multiplier. Both integer
+ * divisions are the contracts' own, so the figure is exact, not "up to".
  */
-export function boostRaise(amount: Micros, multiplierBps: number = DEFAULT_MULTIPLIER_BPS): Micros {
-  return (amount * BigInt(multiplierBps)) / 10_000n;
+export function boostRaise(amount: Micros, terms: BoostTerms): Micros {
+  if (amount <= 0n) return 0n;
+  const locked = terms.locked ?? 0n;
+  return boostOf(locked + amount, terms.multiplierBps, terms.atFaceValue) - boostOf(locked, terms.multiplierBps, terms.atFaceValue);
+}
+
+/**
+ * The terms for `boostRaise` from the two reads: the vault's (`getBoost`) and
+ * ScoreManager's secured-only rule (`getCreditLine`). Null while either is
+ * unknown, and then no screen names a raise.
+ */
+export function boostTerms(
+  boost: { multiplierBps: number; locked: Micros } | null | undefined,
+  credit: { boostAtFaceValue: boolean | null } | null | undefined,
+): BoostTerms | null {
+  if (!boost || !credit || credit.boostAtFaceValue === null) return null;
+  return { multiplierBps: boost.multiplierBps, atFaceValue: credit.boostAtFaceValue, locked: boost.locked };
+}
+
+/** What each dollar locked adds, for the Boost rows: "$1.00" at face value, "$1.50" at the default multiplier. */
+export function boostPerDollar(terms: BoostTerms): Micros {
+  return boostRaise(1_000_000n, { ...terms, locked: 0n });
 }
 
 /** The permit the buyer signs: owner the account, spender the vault, value exactly the amount. */
