@@ -79,10 +79,9 @@ for a network other than the one it was built for.
 
 Everything on screen is the account's own (`src/lib/data/live.ts`):
 the balance is `AUSD.balanceOf` read from the chain; Boost is
-`CollateralVault.lockedOf`, read from the chain at the vault
-`/api/public/network` reports (no vault, no Boost; the app shows what is
-locked and has no way to lock more yet: the relayer's `lockCollateral` is
-not wired to a screen); plans, subscriptions and
+`CollateralVault.lockedOf` (and the vault's `creditMultiplierBps`), read from
+the chain at the vault `/api/public/network` reports (no vault, no Boost);
+plans, subscriptions and
 activity come from `/api/public/buyers/{address}` (the API's records of chain
 events); the credit line, score and reasons from `/api/public/credit/{address}`
 (ScoreManager and the CRE workflow's explained decision); a send link's state
@@ -91,6 +90,22 @@ from `PolarisSend`; a split's shares and who paid them from
 landed). *Raise your limit* signs the account's consent (Face ID)
 and the history wallet's link proof (its own prompt), and the API fires the
 CRE underwriting workflow (`src/lib/underwriting.ts`).
+
+*Add to Boost* (the Boost face in Select account, the Credit line sheet's
+Boost row, and the desktop Credit page) is the way to raise the limit that
+needs no data provider: the buyer picks an amount on the keypad (more than
+zero, at least $0.10, no more than the dollar balance), and one Face ID
+signs an ERC-2612 permit on the dollar (spender: the vault the deployment
+record names, value: exactly the amount, under the domain the API reports).
+The relayer carries it as `lockCollateral` to
+`CollateralVault.lockWithPermit`, and ScoreManager's `creditLimitOf` counts
+it at once (up to 1.5× by the vault's default multiplier, face value for an
+account with no unsecured line yet). The success sheet shows Boost and the
+Pay later limit read back from the chain afterwards (`src/lib/boost.ts`,
+`src/components/boost-sheet.tsx`). There is no *Take out of Boost*: the
+deployed vault's `withdraw(amount)` pays `msg.sender` only and has no signed
+variant a relayer could carry, and a Polaris account holds no MON to call it
+itself; the sheet says taking dollars out isn't in the app yet.
 
 Without it there is no offline demo: every route shows one screen, "Polaris
 isn't configured on this build" (`src/components/not-configured.tsx`, in the
