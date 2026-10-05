@@ -213,11 +213,11 @@ Activity's Your splits).
 | The Polaris landing page | `pnpm --filter @polaris/landing dev` | 3200 |
 | Halcyon, the demo shop | `pnpm --filter @polaris/shop dev` | 3600 |
 
-On their own, without `NEXT_PUBLIC_POLARIS_API_URL`, the app is an offline
-demo and says so on every screen ("Demo mode · sample data, nothing is on
-chain"); the dashboard has a development-only sample session
-(`POLARIS_DEV_MOCK_SESSION=1`); and the shop uses its own labelled dev mock of
-the API. Each app's README lists its environment.
+On their own, without `NEXT_PUBLIC_POLARIS_API_URL`, the app has no offline
+demo: every route shows "Polaris isn't configured on this build", with no
+data, and nothing can be signed; the dashboard has a development-only sample
+session (`POLARIS_DEV_MOCK_SESSION=1`); and the shop uses its own labelled dev
+mock of the API. Each app's README lists its environment.
 
 ### Deploy it
 
@@ -275,7 +275,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 
 | Path | What it is |
 |---|---|
-| [`apps/app`](apps/app/README.md) | **The Polaris app**: the buyer's installable PWA, phone and desktop layouts. Face ID accounts (Mera), the hosted checkout `/pay/[id]` (Pay now, Pay in 4, Subscribe), send by link, split the bill (`/split/new`, `/split/[id]`), plans, the credit line and score. Reads the chain and the API (`src/lib/data/live.ts`); an offline demo without the API |
+| [`apps/app`](apps/app/README.md) | **The Polaris app**: the buyer's installable PWA, phone and desktop layouts. Face ID accounts (Mera), the hosted checkout `/pay/[id]` (Pay now, Pay in 4, Subscribe), send by link, split the bill (`/split/new`, `/split/[id]`), plans, the credit line and score. Reads the chain and the API (`src/lib/data/live.ts`); without the API it only says Polaris isn't configured |
 | [`apps/business`](apps/business/README.md) | **Polaris for Business**: the merchant landing, Privy sign-in, the dashboard (payments, links, Pay in 4 ledger, payouts, developers, settings), and the API: checkout sessions, the relayer (`/api/relay`), webhooks, payouts, merchant registration, CRE underwriting requests and callbacks, the buyer's book |
 | [`apps/shop`](apps/shop/README.md) | **Halcyon**, a demo store paying through `polarispay-sdk`: Pay now, Pay in 4, a subscription and direct wallet payment, with signed webhooks |
 | [`apps/android`](apps/android/README.md) | **The Polaris app for Android**: a Trusted Web Activity generated with Bubblewrap (package `app.polarispay.twa`) that opens the hosted app full screen in Chrome, so Face ID (Mera passkeys) works exactly as in the browser; Send and Receive shortcuts; one-command signed APK (`pnpm --filter @polaris/android build`); verified by the app's `/.well-known/assetlinks.json` |
@@ -451,7 +451,7 @@ What each sponsor asks for, where this repository meets it, and how to check.
 | Requirement | Where | Verify |
 |---|---|---|
 | Users send AUSD across borders | `PolarisSend` escrows AUSD by ERC-3009 against a link key; the app's Send and Claim (`apps/app/src/sheets/send.tsx`, `claim.tsx`); AUSD's own EIP-712 domain (`Agora Dollar`, `1`) | contracts `e2e:local` steps 8-9; `apps/app` `check:signatures` |
-| Real balances and activity | `apps/app/src/lib/data/live.ts`: `AUSD.balanceOf`, the API's record of chain events; the offline demo is labelled on every screen and never links a made-up hash | `docs/demo/01-app-home-funded.png`, `30-app-home-after.png` |
+| Real balances and activity | `apps/app/src/lib/data/live.ts`: `AUSD.balanceOf`, the API's record of chain events; no sample data or stub relayer in any build (`apps/app/test/zero-mock.test.ts`) | `docs/demo/01-app-home-funded.png`, `30-app-home-after.png` |
 | Local currency | Shown next to dollars at the live **Chainlink** rate, with its age ("≈ ARS 161.241 · Chainlink rate, 3 min ago · indicative"): `packages/fx` reads Chainlink Data Feeds server-side (EUR, GBP, JPY, CHF, CAD from Monad mainnet; 18 more from Ethereum, Polygon, Base), served by the app's `/api/fx`; no line for the 10 currencies without a feed, or when the rate is older than its own feed allows (twice its heartbeat, or heartbeat plus 10 min: 14 min for Monad's feeds, 26 h at most), in which case the next feed is read | `pnpm --filter @polaris/fx test`; `pnpm --filter @polaris/fx check:live`; `docs/design/fx/` |
 | A mobile app | An installable PWA, and an **Android app**: a Trusted Web Activity around it ([`apps/android`](apps/android/README.md), package `app.polarispay.twa`), in which Face ID is Chrome's own passkey ceremony, so the same account works in both; the site vouches for it with `/.well-known/assetlinks.json` | `pnpm --filter @polaris/android build` (a signed APK; [the build of 28 Sep 2026](apps/android/README.md#the-build-of-28-sep-2026)); `adb install -r apps/android/dist/polaris-1.0.0-debug.apk` |
 
@@ -695,7 +695,6 @@ compiles) on the CRE SDK's test runtime: `trigger:local`,
   rest from Ethereum, Polygon or Base), and 10 currencies have no feed and no line.
 - **Split the bill** has only run on the local chain: PolarisSplit is not on
   Monad testnet yet (`deploy-split:monad`, not run).
-- The app's offline demo (no API configured) shows sample data and says so.
 
 ## What only you can do
 

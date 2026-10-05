@@ -396,7 +396,7 @@ The `.env.example` in each app describes every variable in full.
 
 | Variable | | When | Value |
 |---|---|---|---|
-| `NEXT_PUBLIC_POLARIS_API_URL` | **required** | build | BUSINESS. Unset, the app is the offline demo ("Demo mode · sample data") |
+| `NEXT_PUBLIC_POLARIS_API_URL` | **required** | build | BUSINESS. Unset, every route shows "Polaris isn't configured on this build" and nothing can be signed |
 | `NEXT_PUBLIC_CHAIN_ID` | **required** | build | `10143` |
 | `NEXT_PUBLIC_RP_ID` | advised | build | The Face ID domain (step 0). Unset: the app's own host |
 | `NEXT_PUBLIC_PRIVY_APP_ID` | optional | build | The dashboard's Privy app: shows "Continue with email" |
