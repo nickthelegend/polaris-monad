@@ -87,7 +87,13 @@ Each task: objective · acceptance · verify · status.
   fixtures stay for unit tests only. Live Etherscan (key present) and public
   RPCs still count. · Acceptance: `packages/underwriting/src/node/client.ts`
   no longer defaults to fixtures; gateway `dataMode` never "fixture" at
-  runtime. · IN PROGRESS
+  runtime. · DONE (6 Oct): two modes only, live or `not_configured`
+  (naming the variable); `UNDERWRITING_MODE=fixture` gone (the gateway
+  refuses it); fixtures only via `@polarispay/underwriting/testing`, and
+  `no-fixtures-in-product.test.ts` fails if product code reaches them; a
+  review a key could finish is `unavailable`, never a line from absent
+  evidence; "Raise your limit" names the missing key. Live provider calls are
+  UNTESTED until the keys exist (Etherscan's is set)
 - **P1.5 Real dollar locally.** The local stack uses Agora's AUSD on a fork
   (see P2.1); MockAUSD stays for unit tests and `AUSD_MODE=mock` only. ·
   NOT STARTED
