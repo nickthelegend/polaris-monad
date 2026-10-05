@@ -161,7 +161,12 @@ Then: open the shop, add something to the bag, **check out with Polaris**. The
 checkout opens in a popup (the app's `/pay/[id]` sheet). Pay now, or choose
 Pay in 4: a new buyer has no line, so **Raise your limit** runs the CRE
 underwriting workflow first (without provider keys it opens no line and says
-which key is missing; Pay now still works). The shop's order is marked paid by
+which key is missing; Pay now still works). Without those keys the way to a
+line is **Add to Boost** (the app's Credit page, the Credit line's Boost row,
+or the Boost card in Select account): one Face ID locks dollars in
+`CollateralVault`, and the line rises with them (at face value for an account
+the CRE workflow hasn't underwritten, up to 1.5× once it has), so Pay in 4
+then opens against it. The shop's order is marked paid by
 the Polaris webhook, and the merchant dashboard at
 http://localhost:3100/dashboard shows the payment and any plan; a payment by a
 buyer with a Face ID inbox reads "Sealed for the buyer" there. Before it prints its URLs, `demo:local` opens every
@@ -189,18 +194,31 @@ popup) hand it their `navigator.credentials` calls; the ceremony and the PRF
 output are Chrome's. A step the run cannot reach is reported as not run, with
 the reason, never as a pass.
 
-On the fork (6 Oct 2026, testnet block 68,498,726, `DEMO_FAST_PLANS=1`, no
-provider keys in `workflows/.env`): `demo:e2e` 23 passed, 0 failed, 5 not run;
-`demo:e2e:split` 22 of 22. What passed: the passkey account, $1,000 of AUSD
-from Agora's faucet read from the chain, Pay now in the shop's popup, the
+On the fork (6 Oct 2026, testnet block 68,523,599, `DEMO_FAST_PLANS=1`, no
+provider keys in `workflows/.env`): `demo:e2e` 55 passed, 0 failed, 0 not run
+(its own 33 steps and the split's 22), and `demo:e2e:split` on its own 22 of
+22. What passed: the passkey account, $1,000 of AUSD from Agora's faucet read
+from the chain, Pay now in the shop's popup (on chain: the buyer down by the
+price, the merchant paid it less the 0.5% fee, the buyer at 0 MON), the
 sealed receipt (the server returns only ciphertext to the app's signed
 request, and the passkey opens it), Raise your limit naming the three missing
 provider keys with no line opened (for a buyer with an account and for a new
-buyer whose account the same tap created), Subscribe, a direct wallet
-payment, the dashboard's sealed payments with no item names, the merchant's
-registration, a dashboard payment link. Not run, because no line opened: Pay
-in 4's three steps, the collections step and the dashboard's plan step. Those
-screenshots are not committed. The screenshots committed below are from an
+buyer whose account the same tap created), then **Add to Boost**: the buyer
+locked $351 from the app's Credit page with one Face ID, `lockedOf` rose and
+the dollar balance fell by exactly that, and the line went from $0 to $351 on
+chain (face value: the account isn't underwritten), enough for the $349 plan.
+Pay in 4 then ran in full: the checkout showed 4 instalments, the plan opened
+on chain against that line, the pool paid the merchant the full $349 in the
+same transaction, the popup showed its receipt and closed, and the webhook
+marked the shop's order paid; the CRE collections workflow collected
+instalment 1 a minute later, and the dashboard shows the plan sealed for the
+buyer. Also Subscribe, a direct wallet payment, the dashboard's sealed
+payments with no item names, the merchant's registration and a dashboard
+payment link. The run's Boost screens are committed
+([`21-boost-1-sheet`](docs/demo/21-boost-1-sheet.png),
+[`21-boost-2-app-confirm`](docs/demo/21-boost-2-app-confirm.png),
+[`21-boost-3-boosted`](docs/demo/21-boost-3-boosted.png)); its other
+screenshots are not. The rest of the screenshots committed below are from an
 earlier run on the Hardhat stack with the dev signer, in which all 24 steps of
 that version passed (the `x-*` screens were captured right after, on the same
 run):
@@ -211,6 +229,7 @@ run):
 | Halcyon → bag → checkout, Pay now | [`10-paynow-3-shop-checkout`](docs/demo/10-paynow-3-shop-checkout.png) |
 | The Polaris checkout in the shop's popup, Face ID confirm | [`10-paynow-4-app-checkout-popup`](docs/demo/10-paynow-4-app-checkout-popup.png), [`10-paynow-5-app-confirm`](docs/demo/10-paynow-5-app-confirm.png) |
 | The popup posts `completed` and closes; the webhook marks the order paid | [`10-paynow-7-shop-order-paid`](docs/demo/10-paynow-7-shop-order-paid.png) |
+| Add to Boost (the fork run, passkey): $351 typed on the app's keypad, one Face ID, and **Boosted.** with the Boost and the line read back from the chain ($0 → $351) | [`21-boost-1-sheet`](docs/demo/21-boost-1-sheet.png), [`21-boost-2-app-confirm`](docs/demo/21-boost-2-app-confirm.png), [`21-boost-3-boosted`](docs/demo/21-boost-3-boosted.png) |
 | Pay in 4: the checkout opens on Pay in 4; Raise your limit | [`20-payin4-4-app-checkout-popup`](docs/demo/20-payin4-4-app-checkout-popup.png), [`20-payin4-5-raise-your-limit`](docs/demo/20-payin4-5-raise-your-limit.png) |
 | The CRE underwriting workflow opens a $1,000 line on chain, with its reasons (the linked account's history, the one from Nansen) | [`20-payin4-6-limit-raised`](docs/demo/20-payin4-6-limit-raised.png) |
 | The popup's receipt stays up until the checkout closes itself | [`10-paynow-6-app-receipt`](docs/demo/10-paynow-6-app-receipt.png), [`20-payin4-8b-app-receipt`](docs/demo/20-payin4-8b-app-receipt.png) |
@@ -301,7 +320,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 | End to end | `DEMO_FAST_PLANS=1 pnpm demo:local` + `pnpm demo:e2e` | 24 of 24 steps (Pay now, Pay in 4 with CRE underwriting, a new buyer's one-tap line, a CRE collection, Subscribe, direct wallet pay, the dashboard, a dashboard payment link paid and reopened); [`docs/demo`](docs/demo) |
 | | `DEMO_FAST_PLANS=1 pnpm demo:local` + `pnpm demo:e2e:chainlink` | 18 of 18 steps (FX in pesos, CRE underwriting with the line labelled a local run, the guardian pausing and resuming Pay in 4 from Chainlink AUSD/USD on Monad mainnet with Pay now still working, a dunned buyer collected by the log trigger 2 s after signing again, the Chainlink dashboard); [`docs/demo/chainlink`](docs/demo/chainlink/README.md) |
 | | `pnpm demo:local` + `pnpm demo:e2e:split` | 22 of 22 steps (a split made on a phone, a share paid by a friend with no account and one with, the same share relayed twice paying once, the organiser's Activity, closing it, a split by named amounts paid in full); [`docs/design/split`](docs/design/split/README.md) |
-| | `DEMO_FAST_PLANS=1 pnpm demo:local` (fork mode) + `pnpm demo:e2e`, then `pnpm demo:e2e:split` | On an anvil fork of Monad testnet with Agora's AUSD, buyers signing in with passkeys on Chrome's virtual authenticator: 23 passed, 0 failed, 5 not run (Pay in 4, its collection and the dashboard's plan: no provider keys, so the review opened no line and said which keys it needs), and the split 22 of 22 (6 Oct 2026) |
+| | `DEMO_FAST_PLANS=1 pnpm demo:local` (fork mode) + `pnpm demo:e2e`, then `pnpm demo:e2e:split` | On an anvil fork of Monad testnet with Agora's AUSD, buyers signing in with passkeys on Chrome's virtual authenticator, no provider keys: 55 passed, 0 failed, 0 not run (33 steps of its own, the split's 22): the review opens no line and names the missing keys, the buyer adds $351 to Boost with one Face ID, and Pay in 4 opens on chain against that line, its first instalment collected by the CRE collections workflow; the split alone 22 of 22 (6 Oct 2026) |
 | | `pnpm --filter @polaris/business e2e:local` | 13 of 13 checks (SDK sessions, relayed Pay now and Pay in 4, verified webhooks, a collection) |
 | | `pnpm --filter @polarispay/contracts e2e:local` | all twelve flows (the credit guard and `reauthorize` among them); the buyer, sender and freelancer never hold MON |
 | | `pnpm --filter @polaris/cre-workflows e2e:local` | 12 passing (all three workflows and every trigger against real contracts on a local node) |
@@ -627,8 +646,9 @@ read, labelled `description() = "Polaris pool health, computed by CRE"`
 #### Confidential HTTP: what it buys and what it costs
 
 **Status: implemented and unit-tested; not yet exercised against the real
-capability.** Every call so far ran on the SDK's test runtime with its mocks
-and the underwriting package's synthesized fixtures. The first real one is a
+capability.** Every call so far ran in tests, on the SDK's test runtime with
+its mocks and the underwriting package's synthesized fixtures (the product
+never reads those: without a key, a provider is not configured). The first real one is a
 CLI run with a provider key (a free Etherscan key is enough): `evidence --only
 underwriting` keeps its log.
 
@@ -699,7 +719,7 @@ compiles) on the CRE SDK's test runtime: `trigger:local`,
 |---|---|---|
 | Nansen data behind a product decision | `packages/underwriting/src/core/providers/nansen.ts` (first funder, related wallets) → Facts → the CRE workflow attests them → ScoreManager scores them on chain | `pnpm --filter @polarispay/underwriting test` |
 | Beyond raw data | The buyer sees their line and the plain-language reasons behind it, explained by `@polarispay/underwriting` from the facts in the forwarder transaction (`apps/business/src/server/credit/explain.ts`), in the checkout, the credit screen and the dashboard's "Why your buyers got credit" | `docs/demo/20-payin4-6-limit-raised.png`, `41-dashboard-panels.png` |
-| Live Nansen calls | *Not yet*: the fixtures are synthesized (and labelled); the local trigger reads them | [What only you can do](#what-only-you-can-do), step 3 |
+| Live Nansen calls | *Not yet*: no Nansen key. Without one, the local trigger reports Nansen as not configured and nothing it would read counts (the synthesized fixtures serve the tests only) | [What only you can do](#what-only-you-can-do), step 3 |
 
 ### Envio: HyperIndex behind a core feature
 
@@ -783,8 +803,10 @@ compiles) on the CRE SDK's test runtime: `trigger:local`,
      `guardian:loop --broadcast`, `retry:listen --broadcast`, and point
      `CRE_UNDERWRITING_TRIGGER_URL` at the CLI's trigger.
 3. **Nansen, Zerion, Etherscan:** create API keys (ask Nansen for credits) and
-   run `pnpm --filter @polarispay/underwriting record --linked <a consenting wallet>`
-   to replace the synthesized fixtures.
+   put them in `workflows/.env`, so reviews read live data (until then a
+   review that needs a provider says it isn't set up and opens no line); then
+   `pnpm --filter @polarispay/underwriting record --linked <a consenting wallet>`
+   replaces the tests' synthesized fixtures with recorded responses.
 4. **Privy:** the server wallets, their policies, the relayer's roles and the
    registry's move are done on Monad testnet
    ([`apps/business/privy-live.md`](apps/business/privy-live.md)). Left, in

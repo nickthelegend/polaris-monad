@@ -35,7 +35,7 @@ send / split → receipt), (2) every sponsor requirement met with real calls,
 | P1 ★ | **Zero-mock product path**: remove offline demo data, the dev mock session, the shop's dev mock API, fixture evidence and the mock dollar from what runs | — | IN PROGRESS |
 | P2 ★ | **Real local stack**: `demo:local` on an anvil fork of Monad testnet with Agora's real AUSD, Chainlink's forwarder, real WebAuthn (virtual authenticator with PRF in automation) | P1 | NOT STARTED |
 | P3 | **Indexer live**: Envio HyperIndex on the local chain feeding the dashboard, webhooks and CRE candidates | P2 for the fork variant | DONE (local) |
-| P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | NOT STARTED |
+| P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | IN PROGRESS (`demo:e2e` 55 of 55 on the fork; the Claude in Chrome pass not started) |
 | P5 | **Quality loop**: tests, typecheck, lint, contracts, Slither, secret scan, 375 px, a11y basics, failure states; gap grep re-run | P4 | IN PROGRESS (first pass green) |
 | P6 | **Judge package**: README, SUBMISSION.md, DEPLOY-LATER.md, kit | — | DONE (refresh at the end) |
 | P7 | **Awaiting the team**: testnet go (PolarisSplit, real AUSD redeploy), keys (Nansen, Zerion, Envio, `cre login`), the shop's hosting, the Face ID domain, the video, registration | team | BLOCKED |
@@ -131,7 +131,8 @@ Each task: objective · acceptance · verify · status.
   `metropolis/fork-stack`): `pnpm demo:local` brings it up and refuses to go
   on unless `check:deployment:fork` passes in full (67 of 67 now; the check
   grew since the 63). Report gas is sized from a traced delivery (G14 on the
-  fork). `demo:e2e` 23 passed, 0 failed, 5 not run; split 22 of 22
+  fork). `demo:e2e` 23 passed, 0 failed, 5 not run; split 22 of 22 (since
+  P4.1's Boost step: 55 of 55, see P4.1)
 - **P2.2 CRE on the fork**: the three workflows' code runs against the fork
   (local runner today; `cre workflow simulate` once `cre login` is done:
   BLOCKED on the team). · IN PROGRESS: the local runners run against the
@@ -163,10 +164,23 @@ Each task: objective · acceptance · verify · status.
 
 ### P4 Verification
 
-- **P4.1 Receipts step in `demo:e2e`** (written, branch
-  `metropolis/receipts-e2e`): run green. · DONE (6 Oct, on the fork with a
-  passkey): the four receipt steps pass; the step now checks the app's own
-  signed `POST /api/receipts` (base64url `enc`/`ct`, no item names)
+- **P4.1 `demo:e2e` green on the fork, Pay in 4 included** (the receipts
+  step, written on branch `metropolis/receipts-e2e`; then Pay in 4 without
+  provider keys). · DONE (6 Oct, on the fork with passkeys): the four receipt
+  steps pass, checking the app's own signed `POST /api/receipts` (base64url
+  `enc`/`ct`, no item names). Pay in 4 (branch `metropolis/e2e-boost`): the
+  review still opens no line and names the missing keys, then the buyer adds
+  $351 to Boost in the app (Credit page, one Face ID on the virtual
+  authenticator; the amount computed from the price, `quotePlan` and the
+  vault's multiplier as ScoreManager applies it, face value for an account
+  not underwritten); `lockedOf` +$351, balance −$351, line $0 → $351 on
+  chain; the plan opens against it, the pool pays the merchant $349 in full,
+  receipt, popup close, the shop's order paid by webhook, instalment 1
+  collected by the CRE collections workflow, the plan on the dashboard. Pay
+  now also checked on chain (price less the 0.5% fee to the merchant, the
+  buyer at 0 MON). `demo:e2e` 55 passed, 0 failed, 0 not run (33 of its own
+  + the split's 22); `demo:e2e:split` 22 of 22 (fork block 68,523,599,
+  `DEMO_FAST_PLANS=1`)
 - **P4.2 `docs/TEST-PLAN-ZERO-MOCK.md`**: every page, endpoint, contract
   interaction and integration with its expected result. · DONE (written;
   the runs fill it in)
