@@ -59,7 +59,11 @@ Each task: objective · acceptance · verify · status.
   `lib/data/sample.ts`, `chainlink-sample.ts` and the `placeholder` branches
   in `lib/data/insights.ts`; empty states where data is absent. · Acceptance:
   no sample or placeholder data reachable in any build; business tests
-  green. · IN PROGRESS
+  green. · DONE (6 Oct): the mock session, the sample book (also the
+  server's sample book for chainless merchants and the "Preview with sample
+  data" toggle) and the placeholder panels are gone; honest empty states
+  ("No collections run yet", "Indexer not configured", "This server isn't
+  connected to Monad yet"); `/gallery` is development only; 279 tests
 - **P1.3 Shop without the dev mock API.** Remove `apps/shop/src/lib/dev-polaris`,
   the `route.dev.ts`/`page.dev.tsx` routes, `HALCYON_DEV_MOCK`, the dev
   drawer; without Polaris keys the shop says payments are not configured. ·
