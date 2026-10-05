@@ -20,15 +20,13 @@ const BACKEND = {
 
 describe("shopHealth", () => {
   it("reports the API, checkout and relay it pays through, and where orders live", () => {
-    const health = shopHealth(BACKEND, false);
+    const health = shopHealth(BACKEND);
     expect(health).toEqual({
       ok: true,
       service: "halcyon-shop",
       production: true,
-      devMock: false,
       polaris: {
         configured: true,
-        target: "backend",
         apiBase: "https://business.example",
         checkoutOrigin: "https://app.example",
         relayUrl: "https://business.example/api/v1/relay/payments",
@@ -41,13 +39,20 @@ describe("shopHealth", () => {
   });
 
   it("never echoes a secret", () => {
-    const text = JSON.stringify(shopHealth(BACKEND, false));
+    const text = JSON.stringify(shopHealth(BACKEND));
     for (const secret of ["sk_test_secretsecret", "whsec_secretsecret", "kv-secret", "pk_test_publishable"]) expect(text).not.toContain(secret);
   });
 
   it("says why payments are off when a setting is missing", () => {
-    const health = shopHealth({ ...BACKEND, SHOP_URL: undefined }, false);
+    const health = shopHealth({ ...BACKEND, SHOP_URL: undefined });
     expect(health.polaris).toEqual({ configured: false, reason: expect.stringContaining("SHOP_URL") });
     expect(health.shopUrl).toBeNull();
+  });
+
+  it("reports payments as not configured without Polaris settings, in development too", () => {
+    for (const NODE_ENV of ["development", "production"]) {
+      const health = shopHealth({ NODE_ENV });
+      expect(health.polaris).toEqual({ configured: false, reason: expect.stringContaining("POLARIS_API_BASE") });
+    }
   });
 });

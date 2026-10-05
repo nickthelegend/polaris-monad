@@ -1,5 +1,4 @@
 import { recordEvent } from "@/lib/orders/service";
-import { requestOrigin } from "@/lib/origin";
 import { PolarisSignatureVerificationError, merchantAddress, verifyWebhook, type PolarisEvent } from "@/lib/polaris";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +18,9 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: Request) {
   const raw = await req.text();
-  const origin = requestOrigin(req);
   let event: PolarisEvent;
   try {
-    event = verifyWebhook(raw, req.headers.get("polaris-signature"), origin);
+    event = verifyWebhook(raw, req.headers.get("polaris-signature"));
   } catch (e) {
     if (e instanceof PolarisSignatureVerificationError) {
       console.warn(`[webhook] Rejected a delivery: ${e.reason}`);
@@ -32,7 +30,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "webhooks aren't configured" }, { status: 503 });
   }
 
-  const result = await recordEvent(event, undefined, undefined, { merchant: merchantAddress(origin) });
+  const result = await recordEvent(event, undefined, undefined, { merchant: merchantAddress() });
   if (result.outcome === "flagged") {
     console.warn(`[webhook] ${event.type} ${event.id} flagged order ${result.orderId}: ${result.reason}`);
   }

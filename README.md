@@ -138,7 +138,7 @@ no public chain):
 | Polaris for Business | http://localhost:3100 | the dev relayer adapter (a local key held to the production relayer policy), a fresh SQLite store, Halcyon's merchant seeded with test API keys and a webhook, registered on `MerchantRegistry` through the dashboard's registration API; the dashboard is signed in for Halcyon with a random local session |
 | The CRE underwriting trigger | http://127.0.0.1:2000/trigger | `workflows` `trigger:local`: the real `polaris-underwrite` handler on the CRE SDK's test runtime, with fixture evidence |
 | The Polaris app | http://localhost:3000 | the hosted checkout; the dev signer stands in for Face ID (badge on every screen) |
-| Halcyon, the demo shop | http://127.0.0.1:3600 | `polarispay-sdk` against the real API and checkout (not its dev mock) |
+| Halcyon, the demo shop | http://127.0.0.1:3600 | `polarispay-sdk` against the real API and checkout |
 | A faucet | http://127.0.0.1:3650/mint | test dollars; the app's **Add money** offers it on this chain |
 | The CRE collections workflow | every minute, and on every `Reauthorized` | `workflows` `collections:local`: the real `polaris-collections` handler on the CRE SDK's test runtime, on both its triggers: the cron collects due Pay in 4 instalments through `CollectionsReceiver` (and dunns what fails), and the EVM log trigger on `PolarisCheckout.Reauthorized` collects a buyer the moment they sign again; it reports each run to the API (the dashboard's Collections card and Chainlink page, `installment.collected` webhooks) and logs to `.demo/logs/cre-collections.log` |
 | The CRE guardian | every minute | `workflows` `guardian:local`: the real `polaris-guardian` handler, reading **Chainlink's AUSD/USD on Monad mainnet** (public RPC, reads only; `DEMO_GUARDIAN_PRICE=mock` for the labelled local mock) and the pool on the local chain, and attesting to `GuardianReceiver`, which `PolarisCheckout.openPlan` asks before every new plan; `.demo/logs/cre-guardian.log` |
@@ -216,8 +216,9 @@ Activity's Your splits).
 On their own, without `NEXT_PUBLIC_POLARIS_API_URL`, the app is an offline
 demo and says so on every screen ("Demo mode · sample data, nothing is on
 chain"); the dashboard has a development-only sample session
-(`POLARIS_DEV_MOCK_SESSION=1`); and the shop uses its own labelled dev mock of
-the API. Each app's README lists its environment.
+(`POLARIS_DEV_MOCK_SESSION=1`); and the shop says payments aren't configured
+(it pays only through Polaris for Business). Each app's README lists its
+environment.
 
 ### Deploy it
 
@@ -250,7 +251,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 | CRE workflows | `pnpm --filter @polaris/cre-workflows test`, `typecheck`, `build` (WASM; needs the CRE CLI: `cre:install`, or `CRE_BIN`) | 212 passing; all three workflows compile to WASM |
 | Polaris for Business | `pnpm --filter @polaris/business test`, `typecheck`, `lint`, `build` | 276 passing (12 for sealed receipts); the API auth check covers every route |
 | The Polaris app | `pnpm --filter @polaris/app test`, `typecheck`, `lint`, `check:signatures`, `build` | 47 passing (the Chainlink states, a credit line's provenance, the dollar it signs for, split plans and links, the Android app's `/.well-known/assetlinks.json`, what a build reports to the deploy check, receipt keys beside an unmoved wallet key); 53 signature checks against the Solidity typehashes |
-| Halcyon | `pnpm --filter @polaris/shop test`, `typecheck`, `lint`, `build` | 101 passing; the build proves no dev mock ships |
+| Halcyon | `pnpm --filter @polaris/shop test`, `typecheck`, `lint`, `build` | 96 passing; the build proves it serves only the store's five API routes |
 | Landing | `pnpm --filter @polaris/landing typecheck`, `build` | builds |
 | Android (TWA) | `pnpm --filter @polaris/android test`, `build` | 51 passing; a signed APK (needs a JDK 17+ and an Android SDK, found on the machine: [`apps/android`](apps/android/README.md#build-it)) |
 | The deploy check | `pnpm test:scripts` | 29 passing (every check against a fake deployment, one broken setting at a time) |

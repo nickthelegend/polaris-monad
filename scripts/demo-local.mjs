@@ -19,7 +19,7 @@
  *  4. the Polaris app (apps/app) on :3000: the hosted checkout, with the dev
  *     signer standing in for Face ID, reading everything from the API;
  *  5. Halcyon, the demo shop (apps/shop), on :3600, paying through
- *     polarispay-sdk against the real API and checkout (no dev mock);
+ *     polarispay-sdk against the real API and checkout;
  *  6. a local faucet on :3650 for test dollars (MockAUSD), which the app's
  *     Add money sheet offers on this chain;
  *  7. the CRE collections workflow's local stand-in (workflows,

@@ -13,12 +13,10 @@ export type ShopHealth = {
   ok: true;
   service: "halcyon-shop";
   production: boolean;
-  /** The dev mock of the Polaris API (next dev only; a production build has none). */
-  devMock: boolean;
+  /** Polaris for Business, which every payment goes through; or why payments aren't configured. */
   polaris:
     | {
         configured: true;
-        target: "backend" | "dev-mock";
         apiBase: string | null;
         checkoutOrigin: string | null;
         relayUrl: string | null;
@@ -40,20 +38,18 @@ function originOf(value: string | undefined): string | null {
   }
 }
 
-export function shopHealth(env: Record<string, string | undefined> = process.env, devMock = process.env.HALCYON_DEV_MOCK === "1"): ShopHealth {
-  const config = resolvePolarisConfig(env, "");
+export function shopHealth(env: Record<string, string | undefined> = process.env): ShopHealth {
+  const config = resolvePolarisConfig(env);
   return {
     ok: true,
     service: "halcyon-shop",
     production: env.NODE_ENV === "production",
-    devMock,
     polaris: config.ok
       ? {
           configured: true,
-          target: config.target,
-          apiBase: config.target === "backend" ? originOf(config.baseUrl) : null,
-          checkoutOrigin: config.target === "backend" ? originOf(config.checkoutOrigin) : null,
-          relayUrl: config.target === "backend" ? config.relayUrl : null,
+          apiBase: originOf(config.baseUrl),
+          checkoutOrigin: originOf(config.checkoutOrigin),
+          relayUrl: config.relayUrl,
           merchant: config.merchant,
           publishableKeyMode: config.publishableKey.startsWith("pk_test_") ? "test" : config.publishableKey.startsWith("pk_live_") ? "live" : "unknown",
         }

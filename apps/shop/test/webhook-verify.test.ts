@@ -5,7 +5,6 @@ import { PolarisSignatureVerificationError, verifyWebhook } from "@/lib/polaris"
 
 import { SECRET, TX, ADDR, event, signed } from "./helpers";
 
-const ORIGIN = "https://shop.test";
 const body = JSON.stringify(
   event("payment.succeeded", {
     txHash: TX,
@@ -43,7 +42,7 @@ function reason(fn: () => unknown): string | null {
 }
 
 /** The store's verify: polaris.webhooks.verify with the configured secret. */
-const verify = (raw: string, header: string | null, now?: number) => verifyWebhook(raw, header, ORIGIN, now);
+const verify = (raw: string, header: string | null, now?: number) => verifyWebhook(raw, header, now);
 
 describe("webhook verification (polaris.webhooks.verify, through the store's config)", () => {
   it("accepts a delivery signed with the endpoint's secret, and returns the event", () => {

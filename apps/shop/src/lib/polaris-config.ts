@@ -41,11 +41,9 @@ export function pausedMessage(guard: ShopCreditGuard | null | undefined): string
 export type BrowserPolarisConfig =
   | {
       ok: true;
-      target: "backend" | "dev-mock";
       publishableKey: string;
-      /** null: the hosted checkout is on this store's own origin (the dev mock). */
-      checkoutOrigin: string | null;
-      /** May be relative to the store's origin. */
+      /** The Polaris app, whose /pay/[id] sheet is the hosted checkout. */
+      checkoutOrigin: string;
       relayUrl: string;
       payInFourAprBps: number;
       /**

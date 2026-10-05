@@ -37,9 +37,11 @@ and a collected instalment (13), Subscribe (14), canceling (15), the window
 closed without paying (22), a wallet payment (16), the wrong network (17)
 and a declined signature (18). Also shown: invalid details (19), the 404
 (20), the phone menu (21), the phone buy bar (03b) and keyboard focus on
-the payment choice (23). They were taken against the dev mock, with motion
-settled; the wallet screens use a scripted EIP-1193 test wallet in place of
-MetaMask.
+the payment choice (23). They were taken against a development mock of the
+Polaris API that the shop carried at the time and has since removed (the
+Polaris window in them is that mock's test checkout, not the Polaris app),
+with motion settled; the wallet screens use a scripted EIP-1193 test wallet
+in place of MetaMask.
 
 ## The integration
 
@@ -91,80 +93,33 @@ amount and currency match the order; anything else sends it to review.
 Orders live in `apps/shop/.data/orders.json` (git-ignored), with an in-memory
 fallback when the disk isn't writable.
 
-## Run it with the dev mock (no backend needed)
+## Without Polaris configured
 
-```bash
-pnpm install
-pnpm --filter @polaris/shop dev        # builds the SDK, then http://localhost:3600
-```
+The shop pays only through Polaris for Business; there is no stand-in for
+it. With `POLARIS_API_BASE` or any key below unset, nothing pretends to work:
 
-With `POLARIS_API_BASE` unset, `next dev` talks to a mock of the Polaris API
-served by this app under `/api/dev-polaris`. It implements the same HTTP
-contract as the real API (`POST` and `GET /api/v1/checkout/sessions`, bearer
-secret key, idempotency keys, validation errors, the `CheckoutSession`
-shape), a relayer that takes the SDK's `RelayPayRequest` and checks the
-buyer's ERC-3009 signature, and webhooks in the SDK's event shapes, signed
-with its `signWebhookPayload` and retried on 404, 409 and 5xx. Its
-checkout page is styled after the Polaris app's `/pay/[id]` sheet: Halcyon
-with the order's photos, Pay now / Pay in 4 / Subscribe, the figures (Pay in
-4's interest at 10% APR, its first date, $0.00 due today), the dated
-schedule, a $500 limit with *Why?*, and *Continue with Face ID*. It carries
-a *Test* chip and a one-line note that it is the development mock and moves
-no money. It answers the store with the SDK's own `createCheckoutMessage`
-(`ready`, then `completed` or `canceled`), or redirects to the success URL
-on a phone. In the developer drawer, *Collect instalment* and *Charge the
-next month* fire the webhooks Polaris would send a week or a month later;
-on a subscription receipt, *Cancel (test)* sends `subscription.canceled`.
+- the checkout says *Payments aren't configured* and offers no pay button
+  (in `next dev` it also names the missing settings);
+- `POST /api/checkout` answers `503 payments_not_configured`, places no
+  order and calls nothing;
+- `GET /api/health` reports `polaris: { configured: false, reason }`;
+- the webhook endpoint answers 503.
 
-The mock can't run in production, and can't be abused in development:
-
-- its route files are named `route.dev.ts` / `page.dev.tsx`, and
-  `next.config.ts` only includes those extensions for the development server,
-  so a production build doesn't contain them at all;
-- whether the shop may switch to the mock is decided when it's built:
-  `next.config.ts` inlines `HALCYON_DEV_MOCK` (`"1"` for `next dev`, `"0"`
-  for `next build`), so a production build started with
-  `NODE_ENV=development` still has no mock;
-- `pnpm --filter @polaris/shop build` ends with
-  `scripts/assert-no-dev-mock.mjs`, which fails the build if any
-  `dev-polaris` route, or any of the mock's code, is in `.next/server`;
-- each mock route also answers 404 unless it's a development build under
-  `NODE_ENV=development` with `POLARIS_API_BASE` unset, and the shop only
-  ever points at the mock under the same conditions;
-- the mock's secret key and webhook secret are random for each dev server
-  process, never constants in the repository, so nobody can sign a webhook
-  the shop accepts; a real `POLARIS_SECRET_KEY` in your env is never sent to
-  the mock;
-- the shop reaches the mock on `http://127.0.0.1:$PORT`, never on a host
-  taken from a request header, and `pnpm dev` binds to `127.0.0.1` so other
-  machines on the network can't reach the dev server at all (all tested in
-  `test/dev-mock.test.ts`).
-
-**Direct wallet payments and the mock.** The SDK's `pay()` reads the chain
-through the buyer's wallet before it asks for a signature (the token's
-decimals and EIP-712 domain, the balance, whether the order is already paid
-or priced), and PolarisPayments isn't deployed on Monad testnet yet. So in
-dev mode the shop points the SDK at a stand-in PolarisPayments address,
-`0x…dEaD`, which no one can call from, so a signature for it can never move
-money; the mock relayer only checks it. A real browser wallet can't answer
-the reads for that address, so the wallet path works end to end with the
-scripted test wallet the screenshots use, and with a real wallet once the
-contracts are deployed.
+The catalogue, the bag and the pages still render, so the store can be
+browsed without a backend.
 
 ## Demo recording
 
 Record against the real hosted checkout, so the Polaris window on camera is
-the Polaris app, not the mock:
+the Polaris app:
 
-1. Run `apps/app` from `metropolis/app-v2` on :3000 and `apps/business` on
-   :3100, and set the keys below in `apps/shop/.env.local`.
-2. `pnpm --filter @polaris/shop dev`, a fresh browser profile, 1440×900.
+1. `pnpm demo:local` at the repo root (a local chain, the API on :3100, the
+   Polaris app on :3000 and this store on :3600, with fresh keys), or run
+   them by hand as below.
+2. A fresh browser profile, 1440×900, at http://127.0.0.1:3600.
 3. Home → Halcyon One → Add to bag → Check out → Pay in 4 → *Pay in 4 ·
    $87.92 a week* → Face ID in Polaris → the receipt (0 of 4 paid, next in
    a week) → *Built with Polaris* for the code and the webhooks.
-
-With the mock instead (no backend), the same path works end to end; the
-Polaris window is then the mock's test checkout.
 
 ## Run it against the real Polaris backend
 
@@ -184,13 +139,12 @@ Polaris window is then the mock's test checkout.
    # POLARIS_RELAY_URL=…                 # defaults to {POLARIS_API_BASE}/api/v1/relay/payments
    ```
 
-4. `pnpm --filter @polaris/shop dev`. Setting `POLARIS_API_BASE` switches the
-   mock off.
+4. `pnpm --filter @polaris/shop dev` (http://127.0.0.1:3600).
 
 In production (`next build && next start`) all six values are required, plus
 `SHOP_URL` (the store's public URL, which success and cancel URLs are built
 from instead of the request's `Host`); with any missing, checkout shows
-*Payments are switched off* instead of guessing. Behind a proxy that sets
+*Payments aren't configured* instead of guessing. Behind a proxy that sets
 `X-Forwarded-Host`, set `TRUST_PROXY=1`; otherwise those headers are ignored.
 
 **Hosted** (Vercel, [`docs/deploy.md`](../../docs/deploy.md) step 4): orders
@@ -217,18 +171,23 @@ else is ignored with a warning.
 pnpm --filter @polaris/shop test        # builds the SDK, then vitest
 pnpm --filter @polaris/shop lint
 pnpm --filter @polaris/shop typecheck
-pnpm --filter @polaris/shop build       # includes the no-dev-mock assertion
+pnpm --filter @polaris/shop build       # ends with scripts/assert-api-routes.mjs
 ```
 
 The tests cover the session route (catalogue pricing, the exact request the
 SDK sends, idempotency, retries, validation, the subscription rules,
-production refusing the mock), webhook verification through the store's
+payments not configured in any environment), the Polaris settings (every
+key required, no fallback, no secret in the browser), webhook verification
+through the store's
 config (valid, tampered, wrong secret, stale, future, re-stamped, malformed,
 rolled secrets), the webhook route (tampered, unsigned, stale and replayed
 deliveries, out-of-order instalments, no client write path), the order status
-transitions for every event, Pay in 4 pricing, and the dev mock (the
-`CheckoutSession` shape, idempotency, validation, the relayer's checks, and
-that it is compiled only for `next dev`).
+transitions for every event, Pay in 4 pricing, the health report, and the
+store's API: `src/app/api` serves exactly the routes in
+[`scripts/api-routes.json`](scripts/api-routes.json). The build holds the
+compiled routes to the same list (`scripts/assert-api-routes.mjs`), so a
+stand-in for Polaris or a test hook can't ship. Polaris itself is replaced
+by a stubbed `fetch` inside the tests only.
 
 ## What the shop needs from the SDK
 
