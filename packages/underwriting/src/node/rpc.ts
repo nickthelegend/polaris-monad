@@ -1,7 +1,6 @@
 /**
  * A JSON-RPC client for one chain: sent-transaction counts and dollar
- * balances. Public RPCs need no key, so this is live unless the service runs
- * entirely on fixtures (see service.ts).
+ * balances. Public RPCs need no key, so this is always live.
  */
 
 import type { RequestSpec } from "../core/providers/common.ts";
@@ -15,7 +14,7 @@ export class RpcClient extends ProviderClient {
   readonly chainId: number;
 
   constructor(url: string, chainId: number, opts: ClientOptions = {}) {
-    super({ ...opts, mode: opts.mode ?? "live" }, { minIntervalMs: 50 });
+    super(opts, { minIntervalMs: 50, provider: "rpc" });
     this.url = url;
     this.chainId = chainId;
   }

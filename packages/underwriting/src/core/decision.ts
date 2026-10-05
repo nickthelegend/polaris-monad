@@ -91,9 +91,11 @@ export interface DecideInput {
   hasLinked?: boolean;
   /**
    * Why this is only a preview, if it is: the buyer still has to confirm the
-   * linked wallet (`ownership`), or a source has not answered yet (`checks`).
+   * linked wallet (`ownership`), a source has not answered yet (`checks`), or
+   * a check needs a data provider this deployment has no key for
+   * (`unavailable`: asking again does not help until it is set up).
    */
-  pending?: "ownership" | "checks" | null;
+  pending?: "ownership" | "checks" | "unavailable" | null;
   /**
    * The facts are too thin for the DON to attest (attest.ts): nothing is
    * reported, so the account stays secured-only, as ScoreManager treats a
@@ -175,7 +177,8 @@ export function decide(input: DecideInput): CreditDecision {
     // The Bring your history step, so "wallet" is allowed: a real history clears the floor at once.
     nextSteps.push({ id: "link-history", label: "Open a line now: confirm with the wallet you already use." });
   }
-  if (thin && !declined && input.pending !== "checks") nextSteps.push(buildHistoryStep(gaps));
+  // Thin facts while a check can't run here may not be thin: no promise about when Pay in 4 opens.
+  if (thin && !declined && input.pending !== "checks" && input.pending !== "unavailable") nextSteps.push(buildHistoryStep(gaps));
   // Confirming a linked wallet helps only when its history is what clears the floor.
   if (input.pending === "ownership" && !declined && !thin) {
     // "Wallet" is allowed only on the Bring your history step (plan §2, "Words the buyer never sees").
@@ -211,10 +214,12 @@ export function decide(input: DecideInput): CreditDecision {
   if (declined && boost === 0n) headline = "We can't offer you credit right now.";
   // Thin facts from a source that has not answered may not be thin: say only that a check is running.
   else if (thin && input.pending === "checks") headline = "We're finishing a check on your history.";
+  else if (thin && input.pending === "unavailable") headline = "Credit reviews aren't fully set up here yet.";
   else if (thin && boost === 0n) headline = "Pay in 4 opens once there's a little more history here.";
   // Pending ownership is the Bring your history step: the buyer confirms with the wallet they linked.
   else if (input.pending === "ownership" && !thin) headline = `Confirm with your wallet to open a ${formatDollars(lineWithBoost)} line.`;
   else if (input.pending === "checks") headline = `Your line is ${formatDollars(lineWithBoost)} for now. We're finishing a check on your history.`;
+  else if (input.pending === "unavailable") headline = `Your line is ${formatDollars(lineWithBoost)} for now. Credit reviews aren't fully set up here yet.`;
   else if (allowed) headline = `You can pay in 4 for up to ${formatDollars(maxPurchase, { cents: true })}.`;
   else if (quote && !quote.fits) headline = `Your line is ${formatDollars(lineWithBoost)}. This purchase needs a little more.`;
   else headline = `Your line is ${formatDollars(lineWithBoost)}.`;

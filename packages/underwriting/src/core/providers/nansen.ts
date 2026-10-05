@@ -207,7 +207,7 @@ export interface NansenRequestSchema {
  * (`additionalProperties: false`), so "one shape for all" would be refused by
  * one side or lean on the alias. The builders below are checked against this
  * table when they build (a body it refuses throws before any credit is
- * spent), the fixture transport answers a refused body the way Nansen does
+ * spent), the tests' fixture transport answers a refused body the way Nansen does
  * (422 `unknown_field`), and the recorder prints what the live API said.
  */
 export const NANSEN_REQUEST_SCHEMA: Readonly<Record<NansenEndpoint, NansenRequestSchema>> = {

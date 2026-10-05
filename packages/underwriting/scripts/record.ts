@@ -29,7 +29,7 @@ import { parseTimestamp } from "../src/core/providers/common.ts";
 import { classifyNansenFailure } from "../src/core/providers/nansen.ts";
 import type { Address } from "../src/core/types.ts";
 import { EtherscanClient } from "../src/node/etherscan.ts";
-import { DEFAULT_FIXTURES_DIR, locateFixture, type FixtureFile } from "../src/node/fixtures.ts";
+import { DEFAULT_FIXTURES_DIR, locateFixture, type FixtureFile } from "../src/testing/fixtures.ts";
 import { fetchTransport, type HttpRequest, type HttpResponse, type HttpTransport } from "../src/node/http.ts";
 import { NansenClient } from "../src/node/nansen.ts";
 import { RpcClient } from "../src/node/rpc.ts";
@@ -148,7 +148,7 @@ const recorder: HttpTransport = async (req, signal) => {
 };
 
 const meter = new CreditMeter();
-const live = { mode: "live" as const, transport: recorder, cacheTtlMs: 0 };
+const live = { transport: recorder, cacheTtlMs: 0 };
 const underwriter = new Underwriter({
   providers: {
     nansen: new NansenClient({ ...live, apiKey: process.env.NANSEN_API_KEY, onResponse: (_s, r) => meter.record(r.headers) }),

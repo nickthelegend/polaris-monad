@@ -18,7 +18,7 @@ import type { CreditReason, Facts, Provider } from "./types.ts";
 
 /** What the reasons can say beyond the bare facts. All optional. */
 export type ExplainContext = Partial<
-  Pick<Derivation, "attribution" | "exchange" | "infrastructureFunder" | "linked" | "missing">
+  Pick<Derivation, "attribution" | "exchange" | "infrastructureFunder" | "linked" | "missing" | "absent">
 >;
 
 function providerOf(source: string): Provider {
@@ -128,16 +128,23 @@ export function explainFacts(facts: Facts, b: ScoreBreakdown, ctx: ExplainContex
   }
 
   // What we could not count.
+  const absent = ctx.absent ?? [];
   if (ctx.linked && !ctx.linked.used) {
+    // Excluded only because its checks need a provider this deployment has no key for.
+    const cantCheckHere = ctx.linked.excludedFor === "missing-risk-check" && (ctx.missing ?? []).some((m) => m.startsWith("linked.") && absent.includes(m));
     const label =
       ctx.linked.excludedFor === "risk-label"
         ? "We couldn't count your linked account: its money first came from a source we can't accept"
-        : "We couldn't finish checking your linked account, so it doesn't count yet";
+        : cantCheckHere
+          ? "We can't check your linked account here yet, so it doesn't count"
+          : "We couldn't finish checking your linked account, so it doesn't count yet";
     lines.push(line("linked-excluded", label, 0, undefined, "nansen.first-funder", "info"));
   }
   const accountMissing = (ctx.missing ?? []).some((m) => m.startsWith("account."));
   if (accountMissing) {
     lines.push(line("missing", "We couldn't read all of this account's history just now", 0, undefined, "polaris.rule", "info"));
+  } else if (absent.some((m) => m.startsWith("account."))) {
+    lines.push(line("missing", "Some of this account's history can't be read here yet, so it doesn't count", 0, undefined, "polaris.rule", "info"));
   }
 
   return lines
@@ -171,6 +178,8 @@ export function merchantVoice(label: string): string {
     [/^You've used savings and trading apps for /, "Buyer has used savings and trading apps for "],
     [/^We couldn't count your linked account/, "We couldn't count the buyer's linked account"],
     [/^We couldn't finish checking your linked account/, "We couldn't finish checking the buyer's linked account"],
+    [/^We can't check your linked account here yet/, "We can't check the buyer's linked account here yet"],
+    [/^Some of this account's history can't be read here yet/, "Some of the buyer's history can't be read here yet"],
     [/^We couldn't read all of this account's history/, "We couldn't read all of the buyer's history"],
   ];
   for (const [pattern, replacement] of rules) if (pattern.test(label)) return label.replace(pattern, replacement);

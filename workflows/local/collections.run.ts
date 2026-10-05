@@ -41,7 +41,7 @@ import { bridgeEvm, chainNowMs, logTriggerPayload, type RpcReceipt, rpcSync } fr
 import { REAUTHORIZED_TOPIC } from "../src/collections/retry.ts";
 import { configSchema, onCron, onReauthorized } from "../src/collections/workflow.ts";
 import { signCallback } from "../src/shared/callback.ts";
-import { type CreRequestLike, type SentRequest, toSent } from "../test/helpers/fixtures-http.ts";
+import { type CreRequestLike, type SentRequest, toSent } from "./requests.ts";
 import { fs } from "../test/helpers/host.ts";
 import { CALLBACK_SECRET_ID, type LocalDeployment, localCollectionsConfig } from "./config.ts";
 

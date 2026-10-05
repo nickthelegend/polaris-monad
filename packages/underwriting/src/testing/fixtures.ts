@@ -1,7 +1,11 @@
 /**
- * A transport that answers from files in `fixtures/` instead of the network.
+ * A transport that answers from files in `fixtures/` instead of the network:
+ * a test double, for tests only.
  *
- * Used when a provider has no API key, and by the tests. Each file holds one
+ * Nothing in the product imports this. It lives under
+ * `@polarispay/underwriting/testing`, which no product path imports (and
+ * `test/no-fixtures-in-product.test.ts` checks): a provider without its key
+ * is "not configured" and never answered from here. Each file holds one
  * response body in the provider's documented shape, wrapped with a `fixture`
  * block that says so:
  *
@@ -11,7 +15,7 @@
  * Where the real API filters (Zerion's `max_mined_at` probes, Nansen's date
  * ranges, page sizes), this transport applies the same filter to the file's
  * rows, so a fixture answers a probe for any "now" the way the API would.
- * A request with no file is a failure (`fixture_missing`), never an empty
+ * A request with no file is a failure (`not_found`, "no fixture recorded"), never an empty
  * answer: a fixture must not invent that a wallet has no history.
  */
 
@@ -20,7 +24,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseTimestamp } from "../core/providers/common.ts";
 import { nansenBodyProblem } from "../core/providers/nansen.ts";
-import { ProviderError, type HttpRequest, type HttpResponse, type HttpTransport } from "./http.ts";
+import { ProviderError, type HttpRequest, type HttpResponse, type HttpTransport } from "../node/http.ts";
 
 /** `packages/underwriting/fixtures`, wherever the package is installed. */
 export const DEFAULT_FIXTURES_DIR = fileURLToPath(new URL("../../fixtures/", import.meta.url));
@@ -48,7 +52,8 @@ function missing(provider: string, endpoint: string, file: string): ProviderErro
     provider,
     endpoint,
     status: 404,
-    code: "fixture_missing",
+    // A test double's miss: a test that reaches for an unrecorded answer fails loudly.
+    code: "not_found",
     message: `no fixture recorded (${file})`,
     retryable: false,
   });
