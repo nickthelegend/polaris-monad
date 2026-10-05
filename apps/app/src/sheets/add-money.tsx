@@ -15,10 +15,11 @@ import { usePrefs } from "@/lib/prefs";
 import { RouteSheet } from "@/components/shell/sheet-host";
 
 /**
- * `pnpm demo:local`'s faucet: test dollars (MockAUSD) on the local chain
- * only. Unset everywhere else, so no other build shows it.
+ * `pnpm demo:local`'s faucet: test dollars on the local chain only (AUSD
+ * from Agora's faucet on its fork of Monad testnet, MockAUSD on a Hardhat
+ * node). Unset everywhere else, so no other build shows it.
  */
-const LOCAL_FAUCET = env.chainId === 31337 ? (process.env.NEXT_PUBLIC_LOCAL_FAUCET_URL?.trim() || "").replace(/\/+$/, "") : "";
+const LOCAL_FAUCET = env.localChain ? (process.env.NEXT_PUBLIC_LOCAL_FAUCET_URL?.trim() || "").replace(/\/+$/, "") : "";
 
 /**
  * Add money: the ways dollars come in today, on ref C's Send / Receive /

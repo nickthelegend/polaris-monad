@@ -19,7 +19,7 @@ export type BuildInfo = {
   devSignerPersist: boolean;
   /** NEXT_PUBLIC_LOCAL_DEMO: pnpm demo:local's stand-in history wallet. */
   localDemo: boolean;
-  /** The local faucet behind Add money (chain 31337 only). */
+  /** The local faucet behind Add money (a local chain only). */
   localFaucet: boolean;
   target: "web" | "android";
   chainId: number;
@@ -51,7 +51,7 @@ export function buildInfo(input: BuildInputs): BuildInfo {
     devSigner: env.devSigner,
     devSignerPersist: input.devSignerPersist === "1",
     localDemo: input.localDemo === "1",
-    localFaucet: env.chainId === 31337 && Boolean(input.localFaucetUrl?.trim()),
+    localFaucet: (env.chainId === 31337 || env.localChain === true) && Boolean(input.localFaucetUrl?.trim()),
     target: input.buildTarget === "android" ? "android" : "web",
     chainId: env.chainId,
     apiUrl: env.apiUrl ?? null,
