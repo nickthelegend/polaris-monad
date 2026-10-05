@@ -70,7 +70,7 @@ describe("the risk guard in the store", () => {
 
     resetCreditGuardCache();
     vi.unstubAllEnvs();
-    vi.stubEnv("HALCYON_DEV_MOCK", "0");
+    vi.stubEnv("POLARIS_API_BASE", "");
     expect(await creditGuard()).toBeNull();
   });
 

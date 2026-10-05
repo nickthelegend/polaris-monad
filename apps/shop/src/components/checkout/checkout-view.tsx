@@ -570,9 +570,13 @@ export function CheckoutView({
 
               <div className="mt-6">
                 {!polarisConfig.ok ? (
-                  <p className="rounded-xl bg-alert-soft p-4 text-[0.95rem] text-alert" role="alert">
-                    Payments are switched off on this store right now.
-                  </p>
+                  <div className="rounded-xl bg-alert-soft p-4 text-[0.95rem] text-alert" role="alert">
+                    <p className="font-medium">Payments aren&rsquo;t configured</p>
+                    <p className="mt-1">
+                      This store isn&rsquo;t connected to Polaris yet, so it can&rsquo;t take an order. Nothing has been charged.
+                    </p>
+                    {process.env.NODE_ENV === "development" ? <p className="mt-2 font-mono text-[0.82rem]">{polarisConfig.reason}</p> : null}
+                  </div>
                 ) : method === "polaris" ? (
                   <div onClickCapture={onPolarisClickCapture}>
                     <PolarisCheckoutButton

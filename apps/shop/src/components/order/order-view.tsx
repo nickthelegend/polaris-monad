@@ -26,14 +26,12 @@ export function OrderView({
   initial,
   fromPolaris,
   fromCheckout,
-  devMock,
   checkoutOrigin,
 }: {
   initial: Order;
   fromPolaris: boolean;
   fromCheckout: boolean;
-  devMock: boolean;
-  /** The hosted Polaris app, where the buyer manages plans and subscriptions. null with the dev mock. */
+  /** The hosted Polaris app, where the buyer manages plans and subscriptions. null when payments aren't configured. */
   checkoutOrigin: string | null;
 }) {
   const [order, setOrder] = useState(initial);
@@ -175,7 +173,7 @@ export function OrderView({
             </div>
           </dl>
 
-          <PaymentBlock order={order} devMock={devMock} checkoutOrigin={checkoutOrigin} onChange={setOrder} />
+          <PaymentBlock order={order} checkoutOrigin={checkoutOrigin} />
 
           <Timeline order={order} />
         </div>
@@ -292,45 +290,13 @@ function short(value: string, head = 6, tail = 4) {
   return value.length > head + tail + 1 ? `${value.slice(0, head)}…${value.slice(-tail)}` : value;
 }
 
-function PaymentBlock({
-  order,
-  devMock,
-  checkoutOrigin,
-  onChange,
-}: {
-  order: Order;
-  devMock: boolean;
-  checkoutOrigin: string | null;
-  onChange: (order: Order) => void;
-}) {
-  const [canceling, setCanceling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+function PaymentBlock({ order, checkoutOrigin }: { order: Order; checkoutOrigin: string | null }) {
   const { polarisConfig } = useShop();
   // Where a receipt's transaction can be seen: Monad testnet's explorer, or none on a local chain.
   const explorer = chainFor(polarisConfig).explorer;
   const paid = order.status === "paid";
   const manageUrl = checkoutOrigin ? `${checkoutOrigin}/insights?view=plans` : null;
 
-  /** Dev mock only: what the buyer canceling in Polaris would send the store. */
-  const cancelTest = async () => {
-    setCanceling(true);
-    setCancelError(null);
-    try {
-      const res = await fetch("/api/dev-polaris/test/advance", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId: order.id, action: "cancel" }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-        setCancelError(body.error?.message ?? "Couldn't cancel the test subscription.");
-      }
-      const latest = await fetchOrder(order.id);
-      if (latest) onChange(latest.order);
-    } finally {
-      setCanceling(false);
-    }
-  };
   const mode = order.payment.mode ?? (order.payment.method === "wallet" ? "direct" : order.payment.requestedMode);
   const plan = order.plan;
   const sub = order.subscription;
@@ -433,26 +399,11 @@ function PaymentBlock({
               {sub.periodsCharged} {sub.periodsCharged === 1 ? "month" : "months"}
             </dd>
           </div>
-          {sub.status === "active" && (manageUrl || devMock) ? (
+          {sub.status === "active" && manageUrl ? (
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 sm:col-span-3">
-              {manageUrl ? (
-                <a href={manageUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-11 items-center gap-1.5 text-[0.92rem]">
-                  Skip or cancel in Polaris <ExternalIcon size={14} />
-                </a>
-              ) : null}
-              {devMock ? (
-                <button
-                  type="button"
-                  onClick={cancelTest}
-                  disabled={canceling}
-                  aria-busy={canceling || undefined}
-                  className="link inline-flex min-h-11 items-center gap-2 text-[0.92rem] text-muted"
-                >
-                  {canceling ? <Spinner size={14} /> : null}
-                  Cancel (test)
-                </button>
-              ) : null}
-              {cancelError ? <p className="w-full text-[0.86rem] text-alert">{cancelError}</p> : null}
+              <a href={manageUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-11 items-center gap-1.5 text-[0.92rem]">
+                Skip or cancel in Polaris <ExternalIcon size={14} />
+              </a>
             </div>
           ) : null}
         </dl>
@@ -488,9 +439,7 @@ function PaymentBlock({
 
       {order.payment.txHash ? (
         <p className="mt-5 border-t border-hair pt-4 text-[0.88rem] text-muted">
-          {devMock ? (
-            <>Test transaction {short(order.payment.txHash, 10, 6)} (dev mock: nothing was sent on chain)</>
-          ) : !explorer ? (
+          {!explorer ? (
             <>Transaction {short(order.payment.txHash, 10, 6)} (a local chain, no explorer)</>
           ) : (
             <a href={`${explorer}/tx/${order.payment.txHash}`} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1.5">
