@@ -37,7 +37,11 @@ export type Balance = {
 export type Boost = {
   /** `CollateralVault.lockedOf(owner)`, base units (6 decimals). */
   locked: Micros;
-  /** `CollateralVault.creditMultiplierBps()`: 15000 means $1 locked adds up to $1.50 of limit. */
+  /**
+   * `CollateralVault.creditMultiplierBps()`: 15000 means $1 locked is worth
+   * $1.50 of limit to an account with a line of its own. ScoreManager counts
+   * it at face value for one without (`CreditLine.boostAtFaceValue`).
+   */
   multiplierBps: number;
   /** The vault's address, the spender of the permit that adds to Boost. */
   vault: Address;
@@ -65,6 +69,14 @@ export type CreditLine = {
   reasons: CreditReason[];
   /** Whether the buyer brought an outside history (§5.5). */
   historyLinked: boolean;
+  /**
+   * Whether ScoreManager counts this account's Boost at face value ($1 locked
+   * adds $1 of limit) rather than at the vault's multiplier: true for an
+   * account with no unsecured line (declined, or not underwritten while
+   * underwriting is required). Null when the API couldn't read the chain, and
+   * then the app claims no raise at all.
+   */
+  boostAtFaceValue: boolean | null;
   /** The opening line never goes past this; higher tiers come from repaying. */
   openingCap: Micros;
   /** When the line opened (the CRE decision); null when not known. */

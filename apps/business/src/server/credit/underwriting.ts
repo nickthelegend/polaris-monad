@@ -100,20 +100,32 @@ async function signerOf(message: string, sig: Hex): Promise<Address | null> {
   }
 }
 
+/**
+ * Whether ScoreManager counts this account's Boost at face value: its
+ * `_securedOnly` rule, `p.declined || (requireUnderwriting && !p.underwritten)`.
+ * Such an account has no unsecured line, and `creditLimitOf` caps its boost at
+ * what it locked (`min(creditBoostOf, lockedOf)`), so $1 locked adds $1 of
+ * limit, not the vault's multiplier. Any other account gets the multiplier.
+ */
+export function boostAtFaceValue(profile: { declined: boolean; underwritten: boolean }, requireUnderwriting: boolean): boolean {
+  return profile.declined || (requireUnderwriting && !profile.underwritten);
+}
+
 async function onChainProfile(account: Address) {
   const chain = requireChain();
   const client = publicClient();
-  const [profile, creditLimit, activeDebt] = await Promise.all([
+  const [profile, requireUnderwriting, creditLimit, activeDebt] = await Promise.all([
     client.readContract({ address: chain.contracts.scoreManager, abi: scoreManagerAbi, functionName: "profileOf", args: [account] }) as Promise<{
       score: number;
       initialized: boolean;
       declined: boolean;
       underwritten: boolean;
     }>,
+    client.readContract({ address: chain.contracts.scoreManager, abi: scoreManagerAbi, functionName: "requireUnderwriting" }) as Promise<boolean>,
     client.readContract({ address: chain.contracts.scoreManager, abi: scoreManagerAbi, functionName: "creditLimitOf", args: [account] }) as Promise<bigint>,
     (client.readContract({ address: chain.contracts.loanEngine, abi: polarisLoanEngineAbi, functionName: "activeDebtOf", args: [account] }) as Promise<bigint>).catch(() => 0n),
   ]);
-  return { profile, creditLimit, activeDebt };
+  return { profile, requireUnderwriting, creditLimit, activeDebt };
 }
 
 function toPublic(r: UnderwritingRequestRecord) {
@@ -312,6 +324,12 @@ export async function creditStatus(account: Address) {
           creditLimitUnits: chainState.creditLimit.toString(),
           /** What the account owes on open plans (PolarisLoanEngine.activeDebtOf). */
           activeDebtUnits: chainState.activeDebt.toString(),
+          /**
+           * Boost counts at face value ($1 locked adds $1 of limit) rather than
+           * at the vault's multiplier: ScoreManager's secured-only rule, read
+           * from `profileOf` and `requireUnderwriting` (see `boostAtFaceValue`).
+           */
+          boostAtFaceValue: boostAtFaceValue(chainState.profile, chainState.requireUnderwriting),
         }
       : null,
     request: request ? toPublic(request) : null,

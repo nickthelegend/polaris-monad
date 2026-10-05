@@ -7,7 +7,7 @@ import { useState, Suspense } from "react";
 import { useAccounts } from "@/components/accounts";
 import { BoostSheet } from "@/components/boost-sheet";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
-import { boostRaise } from "@/lib/boost";
+import { boostPerDollar, boostTerms } from "@/lib/boost";
 import { usd } from "@/lib/money";
 import type { HomeAccount } from "@/lib/prefs";
 
@@ -42,6 +42,8 @@ export function AccountsSheet() {
   }
 
   const onHome = selected?.id === current.id;
+  // Null while the vault or ScoreManager's face-value rule is unknown: then no row names a figure.
+  const terms = boostTerms(boost, credit);
 
   return (
     <>
@@ -58,8 +60,8 @@ export function AccountsSheet() {
             { label: "Number", value: `**** ${current.last4}` },
             current.id === "later" && credit
               ? { label: "Interest", value: `${credit.aprBps / 100}% a year` }
-              : current.id === "boost" && boost
-                ? { label: "Each $1 adds", value: `Up to ${usd(boostRaise(1_000_000n, boost.multiplierBps))} of limit` }
+              : current.id === "boost" && terms
+                ? { label: "Each $1 adds", value: `${usd(boostPerDollar(terms))} of limit` }
                 : { label: "Currency", value: "US dollars" },
             current.id === "later" && credit ? { label: "In use", value: usd(credit.used) } : { label: "Fees", value: "None" },
           ]}

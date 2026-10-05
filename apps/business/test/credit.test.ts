@@ -9,7 +9,7 @@ import { GET as messagesGet } from "@/app/api/public/credit/[account]/messages/r
 import { signCreCallback, verifyCreSignature } from "@/server/credit/callback-signature";
 import { linkMessage, underwriteConsentMessage } from "@/server/credit/messages";
 import { configureExplainForTests, reportFromForwarderCall } from "@/server/credit/explain";
-import { configureUnderwritingForTests, runUnderwritingQueue, unavailableMessage } from "@/server/credit/underwriting";
+import { boostAtFaceValue, configureUnderwritingForTests, runUnderwritingQueue, unavailableMessage } from "@/server/credit/underwriting";
 import { getDb } from "@/server/db";
 
 import { json, params, request, setupServer, type TestEnv } from "./helpers/env";
@@ -35,6 +35,7 @@ function profile(over: Partial<{ underwritten: boolean; declined: boolean; score
 beforeEach(() => {
   env = setupServer({ CRE_UNDERWRITING_TRIGGER_URL: TRIGGER, POLARIS_CRE_CALLBACK_SECRET: SECRET });
   env.chain.reads.profileOf = () => profile();
+  env.chain.reads.requireUnderwriting = () => true;
   env.chain.reads.creditLimitOf = () => 0n;
   triggered = [];
   triggerStatus = 200;
@@ -177,6 +178,45 @@ describe("POST /api/credit/underwrite", () => {
   });
 });
 
+describe("whether Boost counts at face value (ScoreManager's secured-only rule)", () => {
+  it("mirrors _securedOnly: declined, or not underwritten while underwriting is required", () => {
+    // declined → face value, whatever else holds
+    expect(boostAtFaceValue({ declined: true, underwritten: true }, true)).toBe(true);
+    expect(boostAtFaceValue({ declined: true, underwritten: true }, false)).toBe(true);
+    expect(boostAtFaceValue({ declined: true, underwritten: false }, false)).toBe(true);
+    // requireUnderwriting && !underwritten → face value
+    expect(boostAtFaceValue({ declined: false, underwritten: false }, true)).toBe(true);
+    // otherwise the multiplier
+    expect(boostAtFaceValue({ declined: false, underwritten: true }, true)).toBe(false);
+    expect(boostAtFaceValue({ declined: false, underwritten: false }, false)).toBe(false);
+    expect(boostAtFaceValue({ declined: false, underwritten: true }, false)).toBe(false);
+  });
+
+  it("GET /api/public/credit/{account} reads it from profileOf and requireUnderwriting on chain", async () => {
+    const account = privateKeyToAccount(generatePrivateKey()).address;
+    // A new account while underwriting is required: secured only.
+    expect((await status(account)).onChain).toMatchObject({ underwritten: false, declined: false, boostAtFaceValue: true });
+
+    env.chain.reads.profileOf = () => profile({ underwritten: true, score: 640 });
+    expect((await status(account)).onChain).toMatchObject({ boostAtFaceValue: false });
+
+    env.chain.reads.profileOf = () => profile({ underwritten: true, declined: true, score: 640 });
+    expect((await status(account)).onChain).toMatchObject({ boostAtFaceValue: true });
+
+    env.chain.reads.profileOf = () => profile();
+    env.chain.reads.requireUnderwriting = () => false;
+    expect((await status(account)).onChain).toMatchObject({ boostAtFaceValue: false });
+  });
+
+  it("claims nothing when the chain can't be read", async () => {
+    const account = privateKeyToAccount(generatePrivateKey()).address;
+    env.chain.reads.requireUnderwriting = () => {
+      throw new Error("rpc down");
+    };
+    expect((await status(account)).onChain).toBeNull();
+  });
+});
+
 describe("POST /api/cre/callback", () => {
   const post = (payload: unknown, opts: { secret?: string; at?: number } = {}) => {
     const body = JSON.stringify(payload);
@@ -198,7 +238,7 @@ describe("POST /api/cre/callback", () => {
     const s = await status(account.address);
     expect(s.decision).toMatchObject({ status: "applied", score: 640, txHash });
     expect(s.request).toMatchObject({ state: "done" });
-    expect(s.onChain).toMatchObject({ underwritten: true, score: 640, creditLimit: "350.00" });
+    expect(s.onChain).toMatchObject({ underwritten: true, score: 640, creditLimit: "350.00", boostAtFaceValue: false });
 
     // Every DON node may deliver it: the second is acknowledged, not applied twice.
     expect((await json(await post({ id: txHash, type: "credit.underwritten", user: account.address, score: 640 }))).body.data.duplicate).toBe(true);

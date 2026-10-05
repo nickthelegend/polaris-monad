@@ -26,8 +26,8 @@ import { CreditProvenance } from "@/components/credit-provenance";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
 import { CreditDesktop } from "@/desktop/credit";
 import { useOwner } from "@/lib/account/hooks";
-import { boostRaise } from "@/lib/boost";
-import { getBoost, getCreditLine, getPlans } from "@/lib/data";
+import { boostPerDollar, boostTerms } from "@/lib/boost";
+import { type Boost, type CreditLine, getBoost, getCreditLine, getPlans } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { relativeDay, shortDate } from "@/lib/dates";
 import { usd } from "@/lib/money";
@@ -143,7 +143,7 @@ export function CreditSheet() {
               icon={<Sparkles />}
               tone="tint-purple"
               title="Add to Boost"
-              description={`${usd(boost.value.locked)} locked now. Each $1 adds up to ${usd(boostRaise(1_000_000n, boost.value.multiplierBps))} to your limit.`}
+              description={boostRow(boost.value, credit.value)}
               onClick={() => setBoosting(true)}
             />
           </ListGroup>
@@ -162,6 +162,17 @@ export function CreditSheet() {
       <BoostSheet open={boosting} onOpenChange={setBoosting} />
     </div>
   );
+}
+
+/**
+ * The Boost row: what's locked, and what each dollar adds as ScoreManager
+ * counts it for this account ($1.00 at face value, else the multiplier).
+ * While that rule is unknown the row names no figure.
+ */
+function boostRow(boost: Boost, credit: CreditLine | null | undefined): string {
+  const terms = boostTerms(boost, credit);
+  const locked = `${usd(boost.locked)} locked now.`;
+  return terms ? `${locked} Each $1 adds ${usd(boostPerDollar(terms))} to your limit.` : locked;
 }
 
 /** The route: the intercepting page in app/@sheet (over the current tab), or the page itself (cold, over its tab). */
