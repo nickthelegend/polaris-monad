@@ -11,11 +11,13 @@ this app is the process that serves it.
 pnpm install && pnpm --filter @polarispay/gateway start
 ```
 
-It listens on `http://127.0.0.1:3510`. With no keys every provider reads the
-synthesized fixtures in `packages/underwriting/fixtures`; the startup log and
-every response (`dataMode: "fixture"`) say so. To go live, copy
-[`.env.example`](.env.example) to `.env` and add `NANSEN_API_KEY`,
-`ZERION_API_KEY` and `ETHERSCAN_API_KEY`.
+It listens on `http://127.0.0.1:3510`. Each provider is live with its key and
+not configured without it: put `NANSEN_API_KEY`, `ZERION_API_KEY` and
+`ETHERSCAN_API_KEY` (whichever you have) in `apps/gateway/.env`. A provider
+that is not configured is never called and nothing answers in its place; the
+startup log, `/health` (`modes`, `notConfigured`) and every underwriting
+(`providers`, `notConfigured`, `absent`, `unavailable`) say which. Public RPCs
+need no key. `UNDERWRITING_MODE=fixture` is refused: there is no fixture mode.
 
 Without `UNDERWRITING_API_TOKEN` the gateway serves loopback only: set `HOST`
 to anything else (`0.0.0.0`, a LAN address, a public name) and it refuses to
