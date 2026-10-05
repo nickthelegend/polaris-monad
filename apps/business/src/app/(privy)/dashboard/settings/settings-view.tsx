@@ -12,7 +12,6 @@ import {
   PrimaryButton,
   SecondaryButton,
   StatusPill,
-  Toggle,
   toast,
 } from "@polaris/ui";
 import { BadgeCheck, LogOut } from "lucide-react";
@@ -27,17 +26,15 @@ import { useAuth } from "@/lib/auth-context";
 import { DataError, errorMessage } from "@/lib/data";
 import { formatDate } from "@/lib/data/format";
 import { useMerchant } from "@/lib/merchant-context";
-import { useLiveData, useReadiness, useSample } from "@/lib/session";
+import { useDashboardData, useReadiness } from "@/lib/session";
 import { markExplicitSignOut } from "@/lib/sign-out";
 
 /**
  * Settings, behind the top nav's "More": the business name buyers see, the
- * payout wallet, where the business stands on Monad, the sample preview and
- * signing out.
+ * payout wallet, where the business stands on Monad, and signing out.
  */
 export function SettingsView() {
   const { merchant, capabilities } = useMerchant();
-  const sample = useSample();
   const name = merchant.businessName ?? "Your business";
 
   return (
@@ -74,26 +71,6 @@ export function SettingsView() {
             ]}
           />
           <MonadPanel />
-          <PanelCard title="Sample data" padding="md">
-            {sample.canToggle ? (
-              <div className="mt-4 rounded-[20px] bg-ui-surface-1 px-4 py-3.5">
-                <Toggle
-                  label="Preview with sample data"
-                  description="See the dashboard full. Your links, keys and webhooks stay your own; every sample card is marked."
-                  checked={sample.reason === "preview"}
-                  onCheckedChange={(on) => sample.setPreview(on)}
-                />
-              </div>
-            ) : (
-              <p className="mt-2 text-[14px] leading-relaxed text-ui-muted">
-                {sample.on
-                  ? process.env.NODE_ENV === "development" && sample.reason === "mock"
-                    ? "The development mock session: sample data in the browser, nothing talks to the API."
-                    : "This server shows demo data: payments, plans and payouts marked Sample are invented."
-                  : "Your own data."}
-              </p>
-            )}
-          </PanelCard>
           <SignOutButton />
         </aside>
       </div>
@@ -103,7 +80,7 @@ export function SettingsView() {
 
 function BusinessPanel() {
   const { merchant, refresh } = useMerchant();
-  const data = useLiveData();
+  const data = useDashboardData();
   const [name, setName] = useState(merchant.businessName ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -163,7 +140,6 @@ function BusinessPanel() {
 
 function WalletPanel() {
   const { merchant } = useMerchant();
-  const sample = useSample();
   const wallet = merchant.walletAddress;
   return (
     <PanelCard title="Payout wallet" subtitle="An account only you control, created with your sign-in. Every payment settles here in AUSD.">
@@ -183,7 +159,7 @@ function WalletPanel() {
               size="sm"
               variant="surface"
               items={[
-                { label: "Explorer", value: <Address value={wallet} label="payout address" explorer={!sample.on} /> },
+                { label: "Explorer", value: <Address value={wallet} label="payout address" /> },
                 { label: "Signing", value: "Your sign-in (Privy)" },
               ]}
             />

@@ -46,7 +46,6 @@ export async function buyerBook(address: Address) {
   return {
     address,
     plans: plans
-      .filter((p) => !p.sample)
       .map((p) => ({
         id: p.id,
         merchant: merchantOf(p.merchantId),
@@ -84,7 +83,7 @@ export async function buyerBook(address: Address) {
       createdAt: s.createdAt,
     })),
     payments: payments
-      .filter((p) => !p.sample && !p.mismatch)
+      .filter((p) => !p.mismatch)
       .map((p) => ({
         id: p.id,
         kind: p.kind,

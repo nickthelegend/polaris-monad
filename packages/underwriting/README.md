@@ -22,20 +22,30 @@ You can pay in 4 for up to $992.38.
 pnpm install && pnpm --filter @polarispay/underwriting test
 ```
 
-That runs everything on the fixtures in [`fixtures/`](fixtures/README.md), no
-keys needed. To serve the API, `pnpm --filter @polarispay/gateway start`
-(port 3510). To go live, put keys in `apps/gateway/.env` (see
-[`apps/gateway/.env.example`](../../apps/gateway/.env.example)); each provider
-with a key goes live on its own.
+The tests answer the providers from the fixtures in
+[`fixtures/`](fixtures/README.md), no keys needed. The fixtures are test
+doubles: they live behind `@polarispay/underwriting/testing`, which no product
+path imports (`test/no-fixtures-in-product.test.ts` checks the package, the
+gateway, the API, the app and the CRE workflow and its local runner).
+
+To serve the API, `pnpm --filter @polarispay/gateway start` (port 3510), with
+the keys you have in `apps/gateway/.env`. **There are two modes per provider,
+and no third:** a provider with its key is `live`; one without is
+`not_configured`. A provider that is not configured is never called and
+nothing answers in its place: the evidence only it reads is absent (see
+"Missing keys" below), and `/health` and every assessment name it. Public RPCs
+need no key and are always live.
 
 | Variable | Enables |
 |---|---|
-| `NANSEN_API_KEY` | Live Nansen: first funder, related wallets, the balance and trading fallbacks |
+| `NANSEN_API_KEY` | Live Nansen: first funder, related wallets, the balance and trading fallbacks. Without it a linked wallet's risk checks cannot run |
 | `ZERION_API_KEY` | Live Zerion: exact balances, tenure probes, the account's Monad testnet history |
-| `ETHERSCAN_API_KEY` | Live Etherscan V2: past liquidations, testnet token transfers |
-| `UNDERWRITING_MODE` | `fixture` or `live` for every provider at once |
+| `ETHERSCAN_API_KEY` | Live Etherscan V2: past liquidations, testnet token transfers (the account's history when Zerion is not configured) |
 | `NANSEN_LABELS=1` | Spend 100 credits per linked wallet on Nansen's labels for the risk screen |
 | `UNDERWRITING_ALLOW_PARTIAL=1` | Underwrite conservatively instead of asking the app to retry |
+
+`UNDERWRITING_MODE=fixture` no longer exists: `Underwriter.fromEnv` refuses
+to start with it, so a deployment that still sets it finds out at once.
 
 ## Why Nansen is load-bearing
 
@@ -53,10 +63,10 @@ data. Here, Nansen's data decides how much credit a person gets:
 - **Current balance** and **transactions** are the fallbacks when Zerion is
   down or cannot track an address.
 
-Take Nansen away and a linked wallet cannot be underwritten: its risk checks
-cannot run, so it is left out and the buyer is judged on their Polaris
-account alone, which for a new account is a thin file (no line until there
-is history). Every
+Take Nansen away (no `NANSEN_API_KEY`) and a linked wallet cannot be
+underwritten: its risk checks cannot run, so it is left out, nothing is
+reported, and the outcome says Nansen is not configured rather than asking
+the buyer to retry. Every
 reason line carries `provider: "nansen"` where Nansen backs it, so the app can
 credit it.
 
@@ -65,11 +75,12 @@ credit it.
 | Path | What it is |
 |---|---|
 | `src/core/` | The pure half: types, the data recipe, Facts derivation, the score mirror, the decision, reasons, ABI encoding, and each provider's request builders and response parsers. No Node API, no clock, no randomness, no dependency. This is what the CRE workflow bundles |
-| `src/node/` | Provider clients (retries, timeouts, rate limits, cache, fixtures), the Node driver for the recipe, the service, and the HTTP handler |
+| `src/node/` | Provider clients (live or not configured; retries, timeouts, rate limits, cache), the Node driver for the recipe, the service, and the HTTP handler |
 | `src/client/` | The typed client the app's server uses to call the gateway (`@polarispay/underwriting/client`) |
-| `fixtures/` | Synthesized provider responses in the documented shapes, clearly labelled ([README](fixtures/README.md)) |
+| `src/testing/` | Test doubles, for tests only (`@polarispay/underwriting/testing`): the transport that answers from `fixtures/` |
+| `fixtures/` | Synthesized provider responses in the documented shapes, clearly labelled, for the tests ([README](fixtures/README.md)) |
 | `scripts/` | `synthesize-fixtures.ts` writes the fixtures; `record.ts` records real ones once keys exist |
-| `test/` | 261 tests: the mirror, the encoding, derivation, reasons, parsers, HTTP, clients, personas, failures, the recipe in both runtimes, the service and the API. `packages/contracts/test/metropolis/UnderwritingPackage.test.js` holds the package to the deployed contracts |
+| `test/` | 285 tests: the mirror, the encoding, derivation, reasons, parsers, HTTP, clients, personas, failures, missing keys, the recipe in both runtimes, the service, the API, and no fixtures in the product. `packages/contracts/test/metropolis/UnderwritingPackage.test.js` holds the package to the deployed contracts |
 
 `tsconfig.core.json` typechecks `src/core` with no `node` or `dom` types, and
 `test/core-purity.test.ts` rejects `Date.now`, `Math.random`, `Intl`, timers
@@ -157,6 +168,35 @@ zero**: the outcome is `final: false` with the missing fields listed, the
 report is `null`, and the app shows a preview that never counts an unchecked
 wallet. Nansen spends 2 credits per linked wallet (1 when exchange-funded).
 
+### Missing keys: absent, never invented
+
+A provider without its key is not configured. The driver answers its
+requests with `notConfiguredReply` (code `not_configured`, naming the
+variable) without sending them, the recipe asks the next source in the row,
+and a field no configured source could read gets status `not_configured`
+(`missing` is kept for a source that failed and may answer later). Then:
+
+- **A positive field** (first seen, sent count, dollars, trading since) is
+  absent: it earns no points and does not hold the report back, since asking
+  again cannot change it. It is listed in `absent`.
+- **A risk field** (liquidations, cluster, risk label, first funder) is absent
+  and missing: the linked wallet is left out and nothing is final. One
+  underwriting per account, which binds the linked wallet to it, should not
+  be spent without the history, so it waits for the key.
+- **`unavailable: true`** when nothing can be attested for want of keys: an
+  absent risk check, or a thin file whose age or activity was absent (that
+  may not be thin at all). The headline says "Credit reviews aren't fully set
+  up here yet.", no next step promises when Pay in 4 opens, and
+  `retryAfterSeconds` is null.
+- The Node assessment carries `providers` (each `live` or `not_configured`)
+  and `notConfigured` (`[{ provider: "nansen", env: "NANSEN_API_KEY" }]`), so
+  a screen can say "Nansen not configured". The report format is unchanged.
+
+Without Nansen, the account alone is still underwritten from Zerion or
+Etherscan and the public RPC; without Zerion, Etherscan's token transfers
+date the account; without both, its history is absent and it is
+`unavailable`.
+
 ## The score, the line and the decision
 
 The score is `ScoreManager.scoreFromFacts`, mirrored exactly in BigInt
@@ -241,7 +281,7 @@ underwrite(input: {
   user: Address; observedAt: number | bigint;
   account: SubjectEvidence; linked?: SubjectEvidence | null; linkVerified?: boolean;
   activeDebt?: bigint; purchase?: bigint | null; options?: { allowPartial?: boolean; version?: number };
-}): { version; user; final; attest; missing: string[]; facts: Facts; linkedWallet: Address | null;
+}): { version; user; final; attest; missing: string[]; absent: string[]; unavailable: boolean; facts: Facts; linkedWallet: Address | null;
       report: Hex | null;   // UnderwritingReceiver's batch with this one underwriting; set exactly when attest
       breakdown: ScoreBreakdown; decision: CreditDecision; derivation: Derivation }
 
@@ -256,7 +296,8 @@ maxPrincipal(available, ...): bigint             tierFor(score) · limitFor(scor
 encodeFacts(f): Hex        encodeUnderwritingReport([{ user, linkedWallet: Address | null, facts }]): Hex
 decodeFacts(hex): Facts    decodeUnderwritingReport(hex): { kind: 2, items: UnderwritingItem[] }    validateFacts(f)
 linkMessage({ account, wallet, issuedAt, nonce }): string    linkProofStaleness(issuedAt, now)
-evidence.{ok,fallback,empty,missing}(value, source, detail?)   accountRules()   toJsonSafe(value)
+evidence.{ok,fallback,empty,missing,notConfigured}(value, source, detail?)   accountRules()   toJsonSafe(value)
+notConfiguredReply(spec): Reply   notConfiguredProviders(issues): KeyedProvider[]   PROVIDER_KEYS   // { nansen: "NANSEN_API_KEY", ... }
 nansen.{nansenRequests, parseFirstFunder, parseRelatedWallets, parseCurrentBalanceStables, parseOldestTransaction, parseLabels, parseCounterparties, parsePnlSummary, parseNansenError}
 zerion.{zerionRequests, zerionAuthorization, parseTransactions, countedRows, parsePositionsStables, isNotTrackable}
 etherscan.{etherscanRequests, parseLiquidationCount, parseTokenTransfers}
@@ -282,12 +323,13 @@ new NansenClient(opts)    firstFunder · relatedWallets · currentBalanceStables
 new ZerionClient(opts)    transactions · hasActivityBefore · positionsStables
 new EtherscanClient(opts) liquidationCount · tokenTransfers
 new RpcClient(url, chainId, opts)  transactionCount · balanceOf · isContract
-  opts: { apiKey?, mode?: "live" | "fixture", fixturesDir?, transport?, retry?, clock?, minIntervalMs?, cacheTtlMs?, onResponse? }
+  opts: { apiKey?, transport?, retry?, clock?, minIntervalMs?, cacheTtlMs?, onResponse? }   // .mode: "live" | "not_configured" (no key: every call fails not_configured, nothing sent)
 collectAccount(address, providers, { now }) · collectLinked(address, providers, { now, useNansenLabels? })   // runAsync over the recipes
 sender(providers): (spec) => Promise<Reply>     // each request through its provider's client
 Underwriter.fromEnv(env?) · new Underwriter({ providers, now?, allowPartial? })
   .assess({ account, linked?: { wallet, proof? }, purchase?, activeDebt?, allowPartial? }): Promise<Assessment>
-  .modes()
+  .modes()            // { nansen, zerion, etherscan, rpc }: "live" | "not_configured"
+  .notConfigured()    // [{ provider, env }] for each keyed provider without its key
 createRouter(underwriter, opts) · createNodeHandler(underwriter, opts) · createFetchHandler(underwriter, opts)
 startUnderwritingServer({ port?, host?, token?, corsOrigins?, underwriter? })   // refuses a non-loopback host without a token
 isLoopbackHost(host): Promise<boolean> · isLoopbackAddress(ip) · assertSafeBind(host, token)
@@ -303,8 +345,8 @@ the secret, so a retry does not spend a second Nansen credit.
 
 | Route | Body | Returns |
 |---|---|---|
-| `GET /health` | | `{ ok, version: { facts, model }, modes }` |
-| `POST /v1/underwrite` | `{ account, linked?: { wallet, proof?: { issuedAt, nonce, signature } }, purchase?: "200.00", activeDebt?: "<base units>", allowPartial? }` | The assessment: `final`, `missing`, `facts`, `report`, `breakdown`, `decision`, `evidence`, `attribution`, `issues`, `retryAfterSeconds`, `dataMode`, `credits` |
+| `GET /health` | | `{ ok, version: { facts, model }, modes, notConfigured }`: each provider `live` or `not_configured`, and `[{ provider, env }]` for those without a key |
+| `POST /v1/underwrite` | `{ account, linked?: { wallet, proof?: { issuedAt, nonce, signature } }, purchase?: "200.00", activeDebt?: "<base units>", allowPartial? }` | The assessment: `final`, `missing`, `absent`, `unavailable`, `facts`, `report`, `breakdown`, `decision`, `evidence`, `attribution`, `issues`, `retryAfterSeconds`, `providers`, `notConfigured`, `credits` |
 | `POST /v1/explain` | `{ facts }` or `{ report }` (the body `UnderwritingReceiver.onReport` received), optional `purchase`, `activeDebt` | For facts: `{ user: null, linkedWallet: null, facts, breakdown, decision }`. For a report: `{ kind, items: [{ user, linkedWallet, facts, breakdown, decision }] }`, with the one item's fields also at the top level when there is exactly one |
 | `GET /v1/link-message` | `?account&wallet&issuedAt&nonce` | `{ message }`: the exact text the linked wallet signs |
 

@@ -2,7 +2,7 @@ import type { Cents, PayMode, Payment } from "./types";
 
 /**
  * The Overview's charts, derived from the payments list. Pure functions: the
- * same payments always draw the same charts, live or sample.
+ * same payments always draw the same charts.
  */
 
 const DAY = 86_400_000;

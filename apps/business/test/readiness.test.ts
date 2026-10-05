@@ -119,11 +119,11 @@ describe("storeLocation", () => {
 });
 
 describe("GET /api/health build flags", () => {
-  it("tells a deploy check the mock and local sessions are off", async () => {
+  it("tells a deploy check the local session is off", async () => {
     const res = await json(await health(request("GET", "/api/health"), params({})));
-    expect(res.body.data.build).toMatchObject({ production: false, devMockSession: false, localSession: false, privy: false, workers: false });
+    expect(res.body.data.build).toMatchObject({ production: false, localSession: false, privy: false, workers: false });
     expect(Object.keys(res.body.data.build).sort()).toEqual(
-      ["demoShopUrl", "devMockSession", "localSession", "privy", "privyAppId", "privyServerAppId", "production", "workers"].sort(),
+      ["demoShopUrl", "localSession", "privy", "privyAppId", "privyServerAppId", "production", "workers"].sort(),
     );
     expect(res.body.data.appOrigins).toContain("http://localhost:3000");
   });

@@ -10,15 +10,12 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
-import { DEV_MOCK_SAMPLE, useAuth } from "./auth-context";
+import { useAuth } from "./auth-context";
 import { createHttpData, errorMessage, type DashboardData } from "./data";
-import { createSampleData, withSampleMoney } from "./data/sample";
-import type { Merchant } from "./data/types";
-import { readiness, type Readiness, type SampleReason } from "./features";
+import { readiness, type Readiness } from "./features";
 import { MerchantContext } from "./merchant-context";
 
 /* ── The live data source, bound to the session ─────────────────────────── */
@@ -39,18 +36,13 @@ let ending = false;
  * toast, and goes to /login, back to this page afterwards.
  */
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { mock, getAccessToken, logout } = useAuth();
+  const { getAccessToken, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   const source = useMemo<DashboardData>(
-    () =>
-      // Only the development mock session sets `mock`; the NODE_ENV test
-      // removes this branch from production builds entirely.
-      process.env.NODE_ENV === "development" && mock
-        ? createSampleData(undefined, { empty: !DEV_MOCK_SAMPLE })
-        : createHttpData(getAccessToken, { onSessionEnded: announceSessionEnded }),
-    [mock, getAccessToken],
+    () => createHttpData(getAccessToken, { onSessionEnded: announceSessionEnded }),
+    [getAccessToken],
   );
 
   useEffect(() => {
@@ -74,92 +66,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   return <LiveDataContext.Provider value={source}>{children}</LiveDataContext.Provider>;
 }
 
-/* ── Sample data: the per-viewer preview, the server demo book, the mock ── */
-
-const PREVIEW_KEY = "polaris:sample-preview";
-const previewListeners = new Set<() => void>();
-
-function readPreview(): boolean {
-  try {
-    return window.localStorage.getItem(PREVIEW_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writePreview(on: boolean) {
-  try {
-    if (on) window.localStorage.setItem(PREVIEW_KEY, "1");
-    else window.localStorage.removeItem(PREVIEW_KEY);
-  } catch {
-    // Storage blocked: the preview simply won't be remembered.
-  }
-  previewListeners.forEach((l) => l());
-}
-
-export type SampleState = {
-  /** Sample data is on screen: label every card and row that shows it. */
-  on: boolean;
-  /** Why: the dev mock session, a server with no chain (its sample book), or the viewer's preview. */
-  reason: SampleReason;
-  /** Only the viewer's own preview can be switched off. */
-  canToggle: boolean;
-  setPreview: (on: boolean) => void;
-};
-
-type ScopedData = { data: DashboardData; sample: SampleState };
-const ScopedDataContext = createContext<ScopedData | null>(null);
-
-/**
- * Inside the dashboard: which source the money views read (live, or sample
- * with the merchant's own links, keys and webhooks), and whether to label it.
- */
-export function SampleProvider({ merchant, children }: { merchant: Merchant; children: ReactNode }) {
-  const live = useLiveData();
-  const { mock } = useAuth();
-  const preview = useSyncExternalStore(
-    (l) => {
-      previewListeners.add(l);
-      return () => previewListeners.delete(l);
-    },
-    readPreview,
-    () => false,
-  );
-
-  const reason: SampleState["reason"] =
-    mock && DEV_MOCK_SAMPLE ? "mock" : merchant.sample ? "server" : preview ? "preview" : null;
-  const data = useMemo(
-    () => (reason === "preview" ? withSampleMoney(live, merchant) : live),
-    // The merchant's id is enough: the sample book is seeded from it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [reason, live, merchant.id],
-  );
-  const value = useMemo<ScopedData>(
-    () => ({ data, sample: { on: reason !== null, reason, canToggle: reason === null || reason === "preview", setPreview: writePreview } }),
-    [data, reason],
-  );
-  return <ScopedDataContext.Provider value={value}>{children}</ScopedDataContext.Provider>;
-}
-
-export function useLiveData(): DashboardData {
-  const ctx = useContext(LiveDataContext);
-  if (!ctx) throw new Error("useLiveData must be used inside the DataProvider.");
-  return ctx;
-}
-
-/** The source a page reads: sample money views when sample data is on. */
+/** The source a page reads: the signed-in merchant's own data, from the API. */
 export function useDashboardData(): DashboardData {
-  const scoped = useContext(ScopedDataContext);
-  const live = useContext(LiveDataContext);
-  const source = scoped?.data ?? live;
+  const source = useContext(LiveDataContext);
   if (!source) throw new Error("useDashboardData must be used inside the DataProvider.");
   return source;
-}
-
-export function useSample(): SampleState {
-  return (
-    useContext(ScopedDataContext)?.sample ?? { on: false, reason: null, canToggle: false, setPreview: writePreview }
-  );
 }
 
 /* ── useQuery ───────────────────────────────────────────────────────────── */
@@ -207,7 +118,7 @@ export function useQuery<T>(load: (data: DashboardData) => Promise<T>, options: 
     loadRef.current = load;
   });
 
-  // A different source (sample data switched on or off): start over.
+  // A different source (a new session): start over.
   const [seenSource, setSeenSource] = useState(source);
   if (seenSource !== source) {
     setSeenSource(source);
@@ -275,13 +186,12 @@ export function useQuery<T>(load: (data: DashboardData) => Promise<T>, options: 
 
 /**
  * Whether withdraw, automatic payouts, links and registration can work now,
- * from what the server is connected to and whether sample data is on. Each
- * value is null when ready, otherwise the reason to show beside the control.
+ * from what the server is connected to. Each value is null when ready,
+ * otherwise the reason to show beside the control.
  */
 export function useReadiness(): Readiness {
   const ctx = useContext(MerchantContext);
   const capabilities = ctx?.capabilities;
   const failed = Boolean(ctx?.capabilitiesError);
-  const { reason } = useSample();
-  return useMemo(() => readiness(capabilities, reason, failed), [capabilities, reason, failed]);
+  return useMemo(() => readiness(capabilities, failed), [capabilities, failed]);
 }

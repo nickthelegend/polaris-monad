@@ -21,7 +21,7 @@ let networkDomain: Promise<Domain | null> | null = null;
  * AUSD's EIP-712 domain as the server serves it (`/api/public/network`, from
  * the deployment record, so the chain id and address are the ones the relayer
  * uses), falling back to this build's NEXT_PUBLIC_AUSD_* settings. Null when
- * the server has no chain: the merchant's book is then sample data.
+ * the server has no chain: then nothing can be withdrawn.
  */
 export function stablecoinDomain(): Promise<Domain | null> {
   networkDomain ??= fetch("/api/public/network", { cache: "no-store" })
@@ -42,13 +42,11 @@ export function stablecoinDomain(): Promise<Domain | null> {
  */
 export function useWithdraw() {
   const data = useDashboardData();
-  const { wallet, mock } = useAuth();
+  const { wallet } = useAuth();
 
   return useCallback(
     async (amountCents: Cents, destination: Address): Promise<Payout> => {
-      // The development mock never signs a real authorisation, so it never
-      // asks the server for the network either.
-      const domain = process.env.NODE_ENV === "development" && mock ? null : await stablecoinDomain();
+      const domain = await stablecoinDomain();
       const input: WithdrawInput = { amountCents, destination };
 
       if (domain) {
@@ -78,7 +76,7 @@ export function useWithdraw() {
 
       return data.withdraw(input);
     },
-    [data, wallet, mock],
+    [data, wallet],
   );
 }
 

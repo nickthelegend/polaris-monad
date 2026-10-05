@@ -174,9 +174,8 @@ candidates come from it.
 🔑 Move `polarispay.app` onto the Vercel team that hosts the apps. Then:
 `app.polarispay.app` → the app with `NEXT_PUBLIC_RP_ID=polarispay.app`;
 `polarispay.app` → landing; `shop.polarispay.app` → shop. Update
-`POLARIS_CHECKOUT_ORIGIN` (Railway), `NEXT_PUBLIC_CONSUMER_APP_URL` and
-`NEXT_PUBLIC_DEMO_SHOP_URL` (Railway build variables), the landing page's and
-shop's URL variables; redeploy all four; add the new origins in Privy; run the
+`POLARIS_CHECKOUT_ORIGIN` (Railway) and `NEXT_PUBLIC_DEMO_SHOP_URL` (a Railway
+build variable), the landing page's and shop's URL variables; redeploy all four; add the new origins in Privy; run the
 deploy check. Face ID accounts made on `vercel.app` before this stay there.
 
 ## 7. After any block

@@ -62,7 +62,7 @@ export function useEmailLoginOpen(): boolean {
   return useSyncExternalStore(subscribeEmailLogin, emailLoginOpen, () => false);
 }
 
-/** The address data is read for: the account on this device, or null (sample data). */
+/** The address data is read for: the account on this device, or null (none yet). */
 export function useOwner(): `0x${string}` | null {
   const state = useAccountState();
   return state.status === "ready" || state.status === "locked" ? state.address : null;

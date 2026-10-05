@@ -12,8 +12,6 @@ import {
   type WebhookEvent,
 } from "polarispay-sdk/server";
 
-import { randomBytes } from "node:crypto";
-
 import type { BrowserPolarisConfig, LocalChain, ShopCreditGuard } from "./polaris-config";
 
 export { PolarisError, PolarisSignatureVerificationError, isPolarisError } from "polarispay-sdk/server";
@@ -35,65 +33,16 @@ type Address = `0x${string}`;
  *   NEXT_PUBLIC_POLARIS_PUBLISHABLE_KEY  pk_test_…
  *   NEXT_PUBLIC_POLARIS_CHECKOUT_ORIGIN  where hosted checkout pages live (the Polaris app)
  *
- * In `next dev` with POLARIS_API_BASE unset, the shop talks to its own dev
- * mock of the Polaris API under /api/dev-polaris instead. That can't happen
- * in production: whether the build may use the mock is decided when it is
- * built (HALCYON_DEV_MOCK, inlined by next.config.ts), the mock's routes
- * aren't compiled into a production build at all, and its secrets are random
- * per dev server process, never constants in the repository.
+ * Without POLARIS_API_BASE and the keys, the shop takes no payments: the
+ * checkout says payments aren't configured and /api/health reports why. There
+ * is no fallback; every payment goes through Polaris for Business.
  */
-
-/** Public by design (the relayer takes it); the mock's secret key and webhook secret are random, see devMockSecrets(). */
-export const DEV_MOCK_PUBLISHABLE_KEY = "pk_test_devmock0001";
-export const DEV_MOCK_MERCHANT: Address = "0x4a1c000000000000000000000000000000000000";
-export const DEV_MOCK_PATH = "/api/dev-polaris";
 
 type Env = Record<string, string | undefined>;
-
-export interface DevMockSecrets {
-  /** The only key the mock API accepts, and the only one the shop sends it. */
-  secretKey: string;
-  /** What the mock signs its webhooks with, and the only secret the shop verifies them with in mock mode. */
-  webhookSecret: string;
-}
-
-/**
- * Fresh random secrets for this dev server process, shared by the shop and
- * its mock through globalThis (route handlers run in one process in `next
- * dev`). Nothing about them is in the repository, so knowing the source
- * doesn't let anyone sign a webhook the shop will accept. They change on
- * every restart, which the mock doesn't mind: it keeps no signed state.
- *
- * The check is written out here, not called, so that a production build,
- * where it reads `"0" !== "1"`, compiles the rest of the function away.
- */
-export function devMockSecrets(): DevMockSecrets {
-  if (process.env.HALCYON_DEV_MOCK !== "1") throw new Error("This build has no dev mock.");
-  const holder = globalThis as unknown as { __halcyonDevMockSecrets?: DevMockSecrets };
-  holder.__halcyonDevMockSecrets ??= {
-    // Letters and digits after the prefix: the SDK refuses anything else in a key.
-    secretKey: `sk_test_${randomBytes(16).toString("hex")}`,
-    webhookSecret: `whsec_${randomBytes(24).toString("hex")}`,
-  };
-  return holder.__halcyonDevMockSecrets;
-}
-
-/**
- * Where the shop's server reaches its own mock: a fixed local origin, never
- * one taken from a request's Host or X-Forwarded-Host (which would let a
- * caller point the shop's bearer key at a server of their choosing).
- */
-export function devMockInternalOrigin(env: Env = process.env): string {
-  if (process.env.HALCYON_DEV_MOCK !== "1") throw new Error("This build has no dev mock.");
-  const port = /^\d{2,5}$/.test(env.PORT ?? "") ? env.PORT : "3600";
-  return `http://127.0.0.1:${port}`;
-}
 
 export type PolarisConfig =
   | {
       ok: true;
-      /** "backend": a real Polaris API. "dev-mock": this app's own mock, development only. */
-      target: "backend" | "dev-mock";
       baseUrl: string;
       secretKey: string;
       webhookSecret: string;
@@ -106,32 +55,22 @@ export type PolarisConfig =
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
-export function resolvePolarisConfig(env: Env, origin: string): PolarisConfig {
-  const apiBase = env.POLARIS_API_BASE?.trim();
-  if (!apiBase) {
-    // A literal "0" !== "1" in a production bundle, so this branch can't run there.
-    if (process.env.HALCYON_DEV_MOCK !== "1" || env.NODE_ENV !== "development") {
-      return { ok: false, reason: "POLARIS_API_BASE isn't set. Payments are off until it points at the Polaris API." };
-    }
-    // The shop's server reaches its mock on a fixed local origin, never one a request names.
-    const mockBase = `${devMockInternalOrigin(env)}${DEV_MOCK_PATH}`;
-    // Only the mock's own random secrets: a real POLARIS_SECRET_KEY is never sent to the mock.
-    const secrets = devMockSecrets();
-    return {
-      ok: true,
-      target: "dev-mock",
-      baseUrl: mockBase,
-      secretKey: secrets.secretKey,
-      webhookSecret: secrets.webhookSecret,
-      publishableKey: DEV_MOCK_PUBLISHABLE_KEY,
-      // The mock serves its test checkout from this app, so that is the origin messages come from.
-      checkoutOrigin: origin,
-      relayUrl: `${mockBase}/api/v1/relay`,
-      merchant: ADDRESS.test(env.POLARIS_MERCHANT_ADDRESS ?? "") ? (env.POLARIS_MERCHANT_ADDRESS as Address) : DEV_MOCK_MERCHANT,
-    };
+function isHttpUrl(value: string): boolean {
+  try {
+    return /^https?:$/.test(new URL(value).protocol);
+  } catch {
+    return false;
   }
+}
 
+/**
+ * The shop's Polaris settings, or why payments aren't configured. Every
+ * setting is required (SHOP_URL in production too); nothing is filled in for
+ * a missing one.
+ */
+export function resolvePolarisConfig(env: Env): PolarisConfig {
   const missing = [
+    ["POLARIS_API_BASE", env.POLARIS_API_BASE],
     ["POLARIS_SECRET_KEY", env.POLARIS_SECRET_KEY],
     ["POLARIS_WEBHOOK_SECRET", env.POLARIS_WEBHOOK_SECRET],
     ["NEXT_PUBLIC_POLARIS_PUBLISHABLE_KEY", env.NEXT_PUBLIC_POLARIS_PUBLISHABLE_KEY],
@@ -143,26 +82,29 @@ export function resolvePolarisConfig(env: Env, origin: string): PolarisConfig {
   if (missing.length > 0) {
     return { ok: false, reason: `Set ${missing.map(([name]) => name).join(", ")} to take payments through Polaris.` };
   }
+  const apiBase = env.POLARIS_API_BASE!.trim();
+  const checkoutOrigin = env.NEXT_PUBLIC_POLARIS_CHECKOUT_ORIGIN!.trim();
+  if (!isHttpUrl(apiBase)) return { ok: false, reason: "POLARIS_API_BASE must be an http(s) URL." };
+  if (!isHttpUrl(checkoutOrigin)) return { ok: false, reason: "NEXT_PUBLIC_POLARIS_CHECKOUT_ORIGIN must be an http(s) URL." };
   if (!ADDRESS.test(env.POLARIS_MERCHANT_ADDRESS!.trim())) {
     return { ok: false, reason: "POLARIS_MERCHANT_ADDRESS must be a 0x-prefixed address." };
   }
   const baseUrl = apiBase.replace(/\/+$/, "");
   return {
     ok: true,
-    target: "backend",
     baseUrl,
     secretKey: env.POLARIS_SECRET_KEY!.trim(),
     webhookSecret: env.POLARIS_WEBHOOK_SECRET!.trim(),
     publishableKey: env.NEXT_PUBLIC_POLARIS_PUBLISHABLE_KEY!.trim(),
-    checkoutOrigin: new URL(env.NEXT_PUBLIC_POLARIS_CHECKOUT_ORIGIN!.trim()).origin,
+    checkoutOrigin: new URL(checkoutOrigin).origin,
     // The API's direct-pay relay route (apps/business: POST /api/v1/relay/payments).
     relayUrl: env.POLARIS_RELAY_URL?.trim() || `${baseUrl}/api/v1/relay/payments`,
     merchant: env.POLARIS_MERCHANT_ADDRESS!.trim() as Address,
   };
 }
 
-export function polarisConfig(origin: string): PolarisConfig {
-  return resolvePolarisConfig(process.env, origin);
+export function polarisConfig(): PolarisConfig {
+  return resolvePolarisConfig(process.env);
 }
 
 const ADDRESS_FIELDS = [
@@ -209,18 +151,14 @@ export function localChain(env: Env = process.env): LocalChain | null {
 
 /** What the browser may know: no secrets. Passed from server components as props. */
 export function browserConfig(): BrowserPolarisConfig {
-  // The origin only matters to the dev mock, whose URLs the browser resolves against its own.
-  const config = resolvePolarisConfig(process.env, "");
+  const config = resolvePolarisConfig(process.env);
   const payInFourAprBps = payInFourApr();
   if (!config.ok) return { ok: false, reason: config.reason, payInFourAprBps };
-  // Written out so a production build folds it to false and drops the mock's paths.
-  const mock = process.env.HALCYON_DEV_MOCK === "1" && config.target === "dev-mock";
   return {
     ok: true,
-    target: config.target,
     publishableKey: config.publishableKey,
-    checkoutOrigin: mock ? null : config.checkoutOrigin,
-    relayUrl: mock ? `${DEV_MOCK_PATH}/api/v1/relay` : config.relayUrl,
+    checkoutOrigin: config.checkoutOrigin,
+    relayUrl: config.relayUrl,
     payInFourAprBps,
     chain: localChain(process.env),
   };
@@ -276,8 +214,8 @@ export function resetCreditGuardCache(): void {
  * page up: past 2.5 s, or on any error, it is null, which the store treats
  * as open (the hosted checkout and the chain still apply the real answer).
  */
-export async function creditGuard(origin = ""): Promise<ShopCreditGuard | null> {
-  const config = resolvePolarisConfig(process.env, origin);
+export async function creditGuard(): Promise<ShopCreditGuard | null> {
+  const config = resolvePolarisConfig(process.env);
   if (!config.ok) return null;
   const key = config.baseUrl;
   if (guardCache && guardCache.key === key && Date.now() - guardCache.at < 10_000) return guardCache.value;
@@ -326,7 +264,7 @@ export async function createCheckoutSession(
   order: Order,
   origin: string,
 ): Promise<{ session: CheckoutSession; log: SdkCall }> {
-  const config = polarisConfig(origin);
+  const config = polarisConfig();
   if (!config.ok) throw new Error(config.reason);
   const params = sessionParamsFor(order, origin);
   const idempotencyKey = `${order.id}:session:${order.payment.sessionAttempt}`;
@@ -355,8 +293,8 @@ export async function createCheckoutSession(
   }
 }
 
-export async function retrieveCheckoutSession(id: string, origin: string): Promise<{ session: CheckoutSession; log: SdkCall }> {
-  const config = polarisConfig(origin);
+export async function retrieveCheckoutSession(id: string): Promise<{ session: CheckoutSession; log: SdkCall }> {
+  const config = polarisConfig();
   if (!config.ok) throw new Error(config.reason);
   const session = await server(config).checkout.sessions.retrieve(id);
   return {
@@ -372,13 +310,13 @@ export async function retrieveCheckoutSession(id: string, origin: string): Promi
 }
 
 /** Verify a delivery against the raw body. Throws PolarisSignatureVerificationError. */
-export function verifyWebhook(rawBody: string, signature: string | null, origin: string, now?: number): WebhookEvent {
-  const config = polarisConfig(origin);
+export function verifyWebhook(rawBody: string, signature: string | null, now?: number): WebhookEvent {
+  const config = polarisConfig();
   if (!config.ok) throw new Error(config.reason);
   return server(config).webhooks.verify(rawBody, signature, config.webhookSecret, now === undefined ? undefined : { now });
 }
 
-export function merchantAddress(origin: string): Address | null {
-  const config = polarisConfig(origin);
+export function merchantAddress(): Address | null {
+  const config = polarisConfig();
   return config.ok ? config.merchant : null;
 }

@@ -23,7 +23,6 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       initial={orderForBrowser(order, readable)}
       fromPolaris={via === "polaris"}
       fromCheckout={via === "polaris" || via === "wallet"}
-      devMock={config.ok && config.target === "dev-mock"}
       checkoutOrigin={config.ok ? config.checkoutOrigin : null}
     />
   );

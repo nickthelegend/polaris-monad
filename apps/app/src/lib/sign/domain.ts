@@ -92,12 +92,3 @@ export async function readDomain(client: PublicClient, verifyingContract: Addres
     return domain;
   }
 }
-
-/**
- * A stand-in domain for contracts that aren't configured yet, so flows can be
- * exercised against the stub relayer. Signatures under it are valid EIP-712
- * but no deployed contract will accept them.
- */
-export function placeholderDomain(name: string, chainId: number, verifyingContract: Address): Eip712Domain {
-  return { name, version: "1", chainId, verifyingContract };
-}

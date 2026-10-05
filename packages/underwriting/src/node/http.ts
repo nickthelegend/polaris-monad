@@ -89,7 +89,8 @@ export type ProviderErrorCode =
   /** Nansen refused the body we built (a field name, value or range): fix the request, do not retry. */
   | "request_rejected"
   | "not_found"
-  | "fixture_missing"
+  /** The provider has no API key here: nothing was sent, and nothing answers in its place. */
+  | "not_configured"
   | "parse_error"
   | "http_error";
 

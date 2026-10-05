@@ -46,7 +46,7 @@ describe("@polarispay/underwriting against ScoreManager and PolarisLoanEngine", 
     if (!process.features || !process.features.typescript) this.skip();
     core = await load("core/index.ts");
     collect = await load("node/collect.ts");
-    fixtures = await load("node/fixtures.ts");
+    fixtures = await load("testing/fixtures.ts");
     nansenMod = await load("node/nansen.ts");
     zerionMod = await load("node/zerion.ts");
     etherscanMod = await load("node/etherscan.ts");
@@ -67,13 +67,13 @@ describe("@polarispay/underwriting against ScoreManager and PolarisLoanEngine", 
     await engine.fund(AUSD(500_000));
   });
 
-  /** Fixture-backed providers, as the gateway runs them with no keys. */
+  /** Providers answered by the package's fixture test double, with test keys so they run as live clients do. */
   function providers() {
-    const opts = { mode: "fixture", transport: fixtures.fixtureTransport(), cacheTtlMs: 0 };
+    const opts = { transport: fixtures.fixtureTransport(), cacheTtlMs: 0, minIntervalMs: 0 };
     return {
-      nansen: new nansenMod.NansenClient(opts),
-      zerion: new zerionMod.ZerionClient(opts),
-      etherscan: new etherscanMod.EtherscanClient(opts),
+      nansen: new nansenMod.NansenClient({ ...opts, apiKey: "test-nansen-key" }),
+      zerion: new zerionMod.ZerionClient({ ...opts, apiKey: "test-zerion-key" }),
+      etherscan: new etherscanMod.EtherscanClient({ ...opts, apiKey: "test-etherscan-key" }),
       accountRpc: new rpcMod.RpcClient(core.MONAD_TESTNET.rpcUrl, core.MONAD_TESTNET.chainId, opts),
       historyRpcs: core.HISTORY_CHAINS.map((c) => new rpcMod.RpcClient(c.rpcUrl, c.chainId, opts)),
     };

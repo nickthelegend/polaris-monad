@@ -191,7 +191,7 @@ export async function chainlinkOverview(merchant: MerchantRecord): Promise<Chain
   const config = getConfig();
   const chain = config.chain;
   const now = Date.now();
-  if (!chain || merchant.sample) {
+  if (!chain) {
     return {
       deployed: false,
       network: null,

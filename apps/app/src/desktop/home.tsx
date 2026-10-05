@@ -24,13 +24,13 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useAccounts } from "@/components/accounts";
 import { SignAgainNotice } from "@/components/sign-again";
 import { useOwner } from "@/lib/account/hooks";
-import { getActivity, getPlans, getProfile, SAMPLE_DATA } from "@/lib/data";
+import { getActivity, getPlans, getProfile } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { toNumber } from "@/lib/money";
 import { type HomeAccount, setPrefs } from "@/lib/prefs";
-import { balanceSeries, creditSeries, emptySeries, type Frame, FRAMES, restIndex, type Series } from "@/lib/series";
+import { balanceSeries, boostSeries, creditSeries, type Frame, FRAMES, restIndex, type Series } from "@/lib/series";
 import { useNow } from "@/lib/use-now";
-import { activityColumns, withSample } from "./bits";
+import { activityColumns } from "./bits";
 import { MoneyWidget } from "./money-widget";
 
 const ACCOUNTS: { value: HomeAccount; label: string; description: string }[] = [
@@ -79,8 +79,10 @@ function BalanceChart({ className }: { className?: string }) {
   const activity = useData(() => getActivity(owner), [owner]);
   const plans = useData(() => getPlans(owner), [owner]);
   const profile = useData(() => getProfile(owner), [owner]);
-  const { selected, balance, credit } = useAccounts();
+  const { selected, balance, credit, boost } = useAccounts();
   const account: HomeAccount = selected?.id ?? "dollar";
+  // Boost is offered only where the network has a vault to read it from.
+  const options = ACCOUNTS.filter((a) => a.value !== "boost" || boost);
   const [frame, setFrame] = useState<Frame>("1w");
   const [type, setType] = useState<ChartType>("line");
   const minute = useNow();
@@ -90,12 +92,12 @@ function BalanceChart({ className }: { className?: string }) {
   const now = minute && activity.value ? Math.max(minute, ...activity.value.map((a) => a.at)) : minute;
   const series: Series | null = useMemo(() => {
     if (!now) return null;
-    if (account === "boost") return emptySeries(frame, now);
+    if (account === "boost") return boost ? boostSeries(toNumber(boost.locked), frame, now) : null;
     if (account === "later") return credit && plans.value ? creditSeries(credit, plans.value.plans, frame, now) : null;
-    // A real account's line starts when it was opened (never a week it didn't exist); the sample book draws the whole frame.
-    if (!balance || !activity.value || (!SAMPLE_DATA && !profile.value)) return null;
-    return balanceSeries(toNumber(balance.available), activity.value, frame, now, SAMPLE_DATA ? undefined : (profile.value?.memberSince ?? null));
-  }, [account, frame, now, balance, credit, activity.value, plans.value, profile.value]);
+    // The line starts when the account was opened: never a week it didn't exist.
+    if (!balance || !activity.value || !profile.value) return null;
+    return balanceSeries(toNumber(balance.available), activity.value, frame, now, profile.value.memberSince);
+  }, [account, frame, now, balance, credit, boost, activity.value, plans.value, profile.value]);
 
   const time = timeLabel(frame);
   const f = FRAMES[frame];
@@ -107,7 +109,7 @@ function BalanceChart({ className }: { className?: string }) {
       <PairHeader
         coins={[<PolarisCoin key="p" size={50} />, <DollarCoin key="d" size={50} />]}
         title={meta.label}
-        options={ACCOUNTS}
+        options={options}
         value={account}
         onValueChange={(v) => setPrefs({ homeAccount: v })}
         menuLabel="Choose an account"
@@ -127,7 +129,6 @@ function BalanceChart({ className }: { className?: string }) {
               : `From ${dollars(series.start)} at the start of ${f.title}`
             : undefined
         }
-        badge={withSample()}
         valueTitle={`${what}, now`}
         right={<TimeframeChips options={["1h", "24h", "1w", "1m"] as const} value={frame} onValueChange={setFrame} aria-label="Timeframe" />}
       />
@@ -198,7 +199,7 @@ function chipFor(series: Series, suffix: string): { delta: number | null; label?
 function BoostEmpty() {
   return (
     <div className="grid justify-items-center gap-4">
-      <p className="max-w-[36ch] text-[15px] text-ui-muted">Nothing locked in Boost. Dollars you lock here raise your Pay later line.</p>
+      <p className="max-w-[36ch] text-[15px] text-ui-muted">Nothing locked in Boost. Dollars locked in Boost raise your Pay later line.</p>
       <PrimaryButton asChild size="sm" icon={<Sparkles />}>
         <Link href="/credit" scroll={false}>
           See your line

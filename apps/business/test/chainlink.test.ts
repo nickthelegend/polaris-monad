@@ -16,7 +16,6 @@ import { GET as guardGet } from "@/app/api/public/credit-guard/route";
 import { GET as sessionGet } from "@/app/api/public/sessions/[id]/route";
 import { POST as relayRoute } from "@/app/api/relay/route";
 import { describeRun } from "@/lib/data/chainlink";
-import { placeholderChainlink } from "@/lib/data/chainlink-sample";
 import { describeCron, nextCronFire } from "@/lib/data/cron";
 import { GUARD_PAUSED_MESSAGE, guardChecks, lastCheckedLine, reasonsFromMask } from "@/lib/data/guard";
 import { describeGuard, resetCreditGuardForTests, type GuardReads } from "@/server/cre/guardian";
@@ -466,19 +465,17 @@ describe("the chain sync records what each CRE report did", () => {
   });
 });
 
-/* ── The sample, when nothing is deployed ───────────────────────────────── */
+/* ── Nothing deployed ───────────────────────────────────────────────── */
 
-describe("the Chainlink page's sample", () => {
-  it("is marked, links no made-up hash, and puts its runs in words", () => {
-    const sample = placeholderChainlink(Date.UTC(2026, 9, 1, 10, 4, 30));
-    expect(sample).toMatchObject({ deployed: false, sample: true });
-    const runs = sample.workflows.flatMap((w) => w.runs.map((r) => ({ key: w.key, run: r })));
-    expect(runs.length).toBeGreaterThan(8);
-    expect(runs.every(({ run }) => run.explorerUrl === null)).toBe(true);
-    expect(new Set(runs.map(({ run }) => run.txHash.slice(0, 8))).size).toBe(runs.length);
-    expect(sample.workflows.map((w) => w.key)).toEqual(["collections", "underwrite", "guardian"]);
-    for (const { key, run } of runs) expect(describeRun(key, run).title).not.toBe("Report");
-    expect(sample.guard.checks.every((c) => c.ok)).toBe(true);
+describe("the Chainlink page with nothing deployed", () => {
+  it("says nothing is deployed, with no workflows, runs or hashes to show", async () => {
+    setupServer({ POLARIS_DEPLOYMENT_FILE: "does-not-exist.json", RELAYER_MODE: "off" });
+    signIn({ userId: "did:privy:undeployed", walletAddress: "0x2222222222222222222222222222222222222222" });
+    const res = await json(await chainlinkGet(request("GET", "/api/chainlink"), params({})));
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ deployed: false, network: null, workflows: [], guard: { state: "unconfigured", checks: [] } });
+    expect(res.body.data).not.toHaveProperty("sample");
+    expect(JSON.stringify(res.body.data)).not.toMatch(/0x[0-9a-f]{64}/i);
   });
 });
 

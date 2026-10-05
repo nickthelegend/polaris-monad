@@ -24,9 +24,6 @@ export const DEMO_SHOP_URL: string | null =
 /** What the demo shop's controls say while there's no shop to open. */
 export const DEMO_SHOP_SOON = "Demo shop coming soon";
 
-/** Where sample data on screen comes from, when it is on. */
-export type SampleReason = "mock" | "server" | "preview" | null;
-
 export type Readiness = {
   /** Null when one-tap withdraw works; otherwise why it doesn't, in words. */
   withdraw: string | null;
@@ -42,16 +39,11 @@ const CHECKING = "Checking what this server is connected to…";
 const UNCHECKED = "We couldn't check this server's connections. We'll try again in a moment.";
 
 /**
- * Readiness for the dashboard's money controls. The development mock session
- * simulates everything in the browser (and labels it Sample); the preview
- * and a server with no chain refuse, with the reason.
+ * Readiness for the dashboard's money controls: a control whose service
+ * isn't connected (no chain, no relayer, no payout signer) refuses, with the
+ * reason.
  */
-export function readiness(caps: Capabilities | null | undefined, sample: SampleReason, failed = false): Readiness {
-  if (sample === "mock") return { withdraw: null, autoPayouts: null, links: null, registration: null };
-  if (sample === "preview") {
-    const reason = "This is the sample preview: there's no real balance behind it. Turn the preview off in your account menu to use your own.";
-    return { withdraw: reason, autoPayouts: reason, links: null, registration: null };
-  }
+export function readiness(caps: Capabilities | null | undefined, failed = false): Readiness {
   if (!caps) {
     const why = failed ? UNCHECKED : CHECKING;
     return { withdraw: why, autoPayouts: why, links: why, registration: why };
@@ -59,7 +51,7 @@ export function readiness(caps: Capabilities | null | undefined, sample: SampleR
 
   const noChain = caps.chain
     ? null
-    : "This server isn't connected to Monad yet, so your book is sample data and nothing can move.";
+    : "This server isn't connected to Monad yet, so nothing can move.";
   const noRelayer = caps.relayer ? null : "Polaris's relayer isn't running on this server yet. It pays the network fee, so nothing can be sent until it is.";
   const noSigner =
     caps.automaticPayouts && PAYOUT_SIGNER_ID ? null : "Automatic payouts switch on once the Privy payout signer is set up on this server.";

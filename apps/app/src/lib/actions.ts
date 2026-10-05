@@ -7,7 +7,7 @@ import type { PaymentLink, Person, Plan } from "./data/types";
 import { getDomain, isConfigured, resolveContract } from "./domains";
 import { amountParam, type Micros, usd } from "./money";
 import { inboxReady } from "./receipts/inbox";
-import { RELAYER_IS_STUB, RelayError, type RelayReceipt, relayer, type Signed } from "./relayer";
+import { RelayError, type RelayReceipt, relayer, type Signed } from "./relayer";
 import { memoHash, rememberSplit, SPLIT_LIFETIME_DAYS, type SplitMemo, splitUrl } from "./split";
 import {
   buildCancel,
@@ -52,7 +52,7 @@ function randomNonce(): Hex {
 
 const noncesAbi = parseAbi(["function nonces(address owner) view returns (uint256)"]);
 
-/** `nonces(owner)` on a contract, or 0 when it isn't reachable (the stub relayer doesn't check). */
+/** `nonces(owner)` on a contract, or 0 when it isn't reachable (the relayer's simulation then refuses a stale signature). */
 async function readNonce(name: "ausd" | "checkout" | "loanEngine", owner: Address): Promise<bigint> {
   if (!isConfigured(name)) return 0n;
   try {
@@ -305,7 +305,7 @@ export async function createSplit(account: LocalAccount, amounts: Micros[], memo
   const expiresAt = t + BigInt(SPLIT_LIFETIME_DAYS) * 86_400n;
   const salt = randomNonce();
   const domain = await getDomain("split");
-  if (domain.verifyingContract === zeroAddress && !RELAYER_IS_STUB) {
+  if (domain.verifyingContract === zeroAddress) {
     throw new RelayError("unavailable", "Splitting a bill isn't available here yet.");
   }
   const creation = await sign(
@@ -313,7 +313,7 @@ export async function createSplit(account: LocalAccount, amounts: Micros[], memo
     buildCreateSplit(domain, { organiser: account.address, salt, amounts, memoHash: memoHash(memo), expiresAt, deadline: t + 15n * MINUTE }),
   );
   const splitId = splitIdOf(account.address, salt);
-  const receipt = await relayer.createSplit({ creation, splitId, memo });
+  const receipt = await relayer.createSplit({ creation });
   const url = splitUrl(origin, splitId, memo);
   rememberSplit(splitId, { memo, url, role: "organiser", at: Date.now() });
   return { splitId, url, memo, amounts, expiresAt: Number(expiresAt) * 1000, receipt };

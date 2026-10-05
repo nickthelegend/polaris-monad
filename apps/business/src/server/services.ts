@@ -19,8 +19,7 @@ import {
   type WebhookEndpointRecord,
 } from "@polaris/db";
 
-import { isToday, money } from "@/lib/data/format";
-import { seedMerchantBook, type SampleBook } from "@/lib/data/placeholder";
+import { isToday } from "@/lib/data/format";
 import type {
   ApiKey,
   AutoPayouts,
@@ -61,9 +60,8 @@ import { merchantInsights } from "./insights";
  * thin: authenticate, validate, call one of these, respond.
  *
  * Everything shown comes from the store, which the chain fills: payments,
- * plans and payouts are written only when their events are ingested. A
- * merchant created while no chain is configured sees a labelled sample book
- * instead (`MerchantRecord.sample`).
+ * plans and payouts are written only when their events are ingested. With no
+ * chain configured, a merchant's book is simply empty.
  */
 
 export async function merchantFor(auth: AuthedMerchant): Promise<Merchant> {
@@ -76,10 +74,6 @@ export async function updateMerchant(auth: AuthedMerchant, patch: { businessName
   const merchant = await ensureMerchant(auth);
   const updated = (await getDb().merchants.update(merchant.id, (m) => ({ ...m, businessName: patch.businessName }))) as MerchantRecord;
   return toMerchant(updated);
-}
-
-function sampleOf(merchant: MerchantRecord): SampleBook | null {
-  return merchant.sample ? seedMerchantBook(merchant.id) : null;
 }
 
 /* ── Mapping records to what the dashboard shows ────────────────────────── */
@@ -144,7 +138,8 @@ function toPayout(p: PayoutRecord): Payout {
     status: p.state === "paid" ? "paid" : p.state === "failed" ? "failed" : "queued",
     amountCents: unitsToCents(p.amountUnits),
     destination: p.destination,
-    signed: !p.sample,
+    // Every payout on record went out under the payout account's own signature (or its payout policy).
+    signed: true,
     txHash: p.txHash,
     createdAt: p.createdAt,
   };
@@ -181,17 +176,16 @@ const newestFirst = <T extends { createdAt: string }>(a: T, b: T) => (a.createdA
 export async function listPayments(auth: AuthedMerchant): Promise<Payment[]> {
   const merchant = await ensureMerchant(auth);
   const real = (await getDb().payments.find({ merchantId: merchant.id }, { orderBy: "createdAt", direction: "desc", limit: 500 })).map(toPayment);
-  return [...real, ...(sampleOf(merchant)?.payments ?? [])].sort(newestFirst);
+  return real.sort(newestFirst);
 }
 
 export async function listPlans(auth: AuthedMerchant): Promise<Plan[]> {
   const merchant = await ensureMerchant(auth);
   const real = (await getDb().plans.find({ merchantId: merchant.id }, { orderBy: "createdAt", direction: "desc", limit: 500 })).map(toPlan);
-  return [...real, ...(sampleOf(merchant)?.plans ?? [])].sort((a, b) => (a.openedAt < b.openedAt ? 1 : -1));
+  return real.sort((a, b) => (a.openedAt < b.openedAt ? 1 : -1));
 }
 
 async function balanceCents(merchant: MerchantRecord): Promise<number> {
-  if (merchant.sample) return merchant.sampleBalanceCents;
   if (!merchant.walletAddress || !getConfig().chain) return 0;
   try {
     return unitsToCents(await walletBalanceUnits(merchant.walletAddress));
@@ -200,9 +194,7 @@ async function balanceCents(merchant: MerchantRecord): Promise<number> {
   }
 }
 
-async function collectorStatus(merchant: MerchantRecord): Promise<CollectorStatus> {
-  const sample = sampleOf(merchant);
-  if (sample) return sample.collector;
+async function collectorStatus(): Promise<CollectorStatus> {
   const run = await getDb().collectorRuns.get("cre");
   if (!run?.lastRunAt) return { state: "stopped", lastPassAt: null, runner: "cre" };
   const age = Date.now() - Date.parse(run.lastRunAt);
@@ -211,8 +203,8 @@ async function collectorStatus(merchant: MerchantRecord): Promise<CollectorStatu
 
 export async function getOverview(auth: AuthedMerchant): Promise<Overview> {
   const merchant = await refreshRegistration(await ensureMerchant(auth));
-  const [payments, plans, balance, collector] = await Promise.all([listPayments(auth), listPlans(auth), balanceCents(merchant), collectorStatus(merchant)]);
-  const insights = await merchantInsights({ wallet: merchant.walletAddress, sample: merchant.sample, payments, plans }).catch((error: unknown) => {
+  const [payments, plans, balance, collector] = await Promise.all([listPayments(auth), listPlans(auth), balanceCents(merchant), collectorStatus()]);
+  const insights = await merchantInsights({ wallet: merchant.walletAddress, payments, plans }).catch((error: unknown) => {
     console.error("[overview] insights failed", error);
     return undefined;
   });
@@ -237,7 +229,7 @@ export async function getOverview(auth: AuthedMerchant): Promise<Overview> {
 
   // Instalments collected in the last seven days, and the on-time rate over those that came due.
   const WEEK = 7 * 86_400_000;
-  const records = merchant.sample ? [] : await getDb().plans.find({ merchantId: merchant.id }, { limit: 500 });
+  const records = await getDb().plans.find({ merchantId: merchant.id }, { limit: 500 });
   let collectedThisWeekCents = 0;
   let cameDue = 0;
   let collected = 0;
@@ -250,20 +242,6 @@ export async function getOverview(auth: AuthedMerchant): Promise<Overview> {
     const due = Math.min(p.installments, Math.max(0, Math.floor((now / 1000 - p.startedAt) / p.intervalSeconds)));
     cameDue += due;
     collected += Math.min(p.installmentsPaid, due);
-  }
-  const sample = sampleOf(merchant);
-  if (sample) {
-    for (const plan of sample.plans) {
-      const each = Math.floor(plan.totalCents / plan.installmentCount);
-      const opened = new Date(plan.openedAt).getTime();
-      for (let k = 1; k <= plan.installmentsPaid; k++) {
-        const dueAt = opened + k * WEEK;
-        if (dueAt <= now && dueAt > now - WEEK) collectedThisWeekCents += each;
-      }
-      const due = Math.min(plan.installmentCount, Math.floor((now - opened) / WEEK));
-      cameDue += due;
-      collected += Math.min(plan.installmentsPaid, due);
-    }
   }
   const collectionRate = cameDue === 0 ? null : Math.round((collected / cameDue) * 1000) / 10;
 
@@ -286,7 +264,6 @@ export async function getOverview(auth: AuthedMerchant): Promise<Overview> {
     },
     collector,
     autoPayouts: toAutoPayouts(merchant),
-    sample: merchant.sample,
     insights,
   };
 }
@@ -326,9 +303,6 @@ export async function deactivateLink(auth: AuthedMerchant, linkId: string): Prom
   const db = getDb();
   const link = await db.links.get(linkId);
   if (!link || link.merchantId !== merchant.id) {
-    if (sampleOf(merchant)?.links.some((l) => l.id === linkId)) {
-      throw new HttpError(409, "sample_data", "Sample links can't be changed. Your own links can.");
-    }
     throw new HttpError(404, "not_found", "That link doesn't exist.");
   }
   if (link.status === "inactive") return toLink(link);
@@ -338,7 +312,7 @@ export async function deactivateLink(auth: AuthedMerchant, linkId: string): Prom
 export async function listLinks(auth: AuthedMerchant): Promise<PaymentLink[]> {
   const merchant = await ensureMerchant(auth);
   const real = (await getDb().links.find({ merchantId: merchant.id }, { orderBy: "createdAt", direction: "desc", limit: 200 })).map(toLink);
-  return [...real, ...(sampleOf(merchant)?.links ?? [])].sort(newestFirst);
+  return real.sort(newestFirst);
 }
 
 /* ── Payouts ────────────────────────────────────────────────────────────── */
@@ -349,15 +323,15 @@ export async function listLinks(auth: AuthedMerchant): Promise<PaymentLink[]> {
  * (payouts), applied to the balance the chain reports, then both ends
  * truncated to cents as the balance card shows them. So the chip always
  * agrees with the card ('\$896.25' never sits beside '+\$896.26 today'). Null
- * when nothing moved, or for a sample book.
+ * when nothing moved.
  */
 async function balanceChangeToday(merchant: MerchantRecord, payouts: PayoutRecord[]): Promise<number | null> {
-  if (merchant.sample || !merchant.walletAddress || !getConfig().chain) return null;
+  if (!merchant.walletAddress || !getConfig().chain) return null;
   const since = new Date(Date.now() - 86_400_000).toISOString();
   const payments = await getDb().payments.find({ merchantId: merchant.id, createdAt: { gte: since } }, { limit: 1000 });
   let moved = 0n;
-  for (const p of payments) if (!p.sample && !p.mismatch) moved += BigInt(p.amountUnits) - BigInt(p.feeUnits);
-  for (const p of payouts) if (!p.sample && p.state !== "failed" && p.createdAt >= since) moved -= BigInt(p.amountUnits);
+  for (const p of payments) if (!p.mismatch) moved += BigInt(p.amountUnits) - BigInt(p.feeUnits);
+  for (const p of payouts) if (p.state !== "failed" && p.createdAt >= since) moved -= BigInt(p.amountUnits);
   if (moved === 0n) return null;
   try {
     const now = await walletBalanceUnits(merchant.walletAddress);
@@ -372,22 +346,19 @@ async function balanceChangeToday(merchant: MerchantRecord, payouts: PayoutRecor
 export async function getPayouts(auth: AuthedMerchant): Promise<PayoutsState> {
   const merchant = await ensureMerchant(auth);
   const rows = await getDb().payouts.find({ merchantId: merchant.id }, { orderBy: "createdAt", direction: "desc", limit: 200 });
-  // Withdrawals against a sample balance are sample rows too.
-  const real = rows.map((p) => (p.sample ? { ...toPayout(p), sample: true } : toPayout(p))).filter((p) => merchant.sample || !p.sample);
   const [balance, changeTodayCents] = await Promise.all([balanceCents(merchant), balanceChangeToday(merchant, rows)]);
   return {
     balanceCents: balance,
-    ...(merchant.sample ? {} : { changeTodayCents }),
+    changeTodayCents,
     walletAddress: merchant.walletAddress,
     auto: toAutoPayouts(merchant),
-    history: [...real, ...(sampleOf(merchant)?.payouts ?? [])].sort(newestFirst),
+    history: rows.map(toPayout).sort(newestFirst),
   };
 }
 
 /**
- * Withdraw to any address. With a chain configured this needs the payout
- * wallet's signed authorisation, and the relayer submits it; in sample mode
- * it is recorded against the sample balance.
+ * Withdraw to any address. It needs the payout wallet's signed
+ * authorisation, and the relayer submits it.
  */
 export async function withdraw(auth: AuthedMerchant, input: WithdrawInput): Promise<Payout> {
   const merchant = await ensureMerchant(auth);
@@ -395,38 +366,8 @@ export async function withdraw(auth: AuthedMerchant, input: WithdrawInput): Prom
   if (input.destination === wallet) {
     throw new HttpError(400, "invalid_request", "That's your Polaris payout account itself. Enter where the money should go.");
   }
-  if (!merchant.sample) {
-    if (!input.authorization) throw new HttpError(400, "signature_required", "Confirm the withdrawal with your payout account.");
-    return toPayout(await withdrawSigned({ merchant, wallet, amountCents: input.amountCents, destination: input.destination, authorization: input.authorization }));
-  }
-
-  // Sample mode: debit the sample balance, atomically.
-  const db = getDb();
-  let available = 0;
-  let ok = false;
-  await db.merchants.update(merchant.id, (m) => {
-    available = m.sampleBalanceCents;
-    if (input.amountCents > m.sampleBalanceCents) return m;
-    ok = true;
-    return { ...m, sampleBalanceCents: m.sampleBalanceCents - input.amountCents };
-  });
-  if (!ok) throw new HttpError(400, "insufficient_balance", `You can withdraw up to ${money(available)} right now.`, { param: "amountCents" });
-  const payout = await db.payouts.insert({
-    id: newId("po", 16),
-    merchantId: merchant.id,
-    kind: "manual",
-    state: "queued",
-    amountUnits: (BigInt(input.amountCents) * 10_000n).toString(),
-    from: wallet,
-    destination: input.destination,
-    authorizationNonce: null,
-    txHash: null,
-    error: null,
-    createdAt: new Date().toISOString(),
-    paidAt: null,
-    sample: true,
-  });
-  return toPayout(payout);
+  if (!input.authorization) throw new HttpError(400, "signature_required", "Confirm the withdrawal with your payout account.");
+  return toPayout(await withdrawSigned({ merchant, wallet, amountCents: input.amountCents, destination: input.destination, authorization: input.authorization }));
 }
 
 export async function setAutoPayouts(auth: AuthedMerchant, input: AutoPayoutsInput): Promise<AutoPayouts> {

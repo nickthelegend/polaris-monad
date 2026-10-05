@@ -1,7 +1,6 @@
 import type { Address, Hex } from "viem";
 import { apiConfigured } from "../api";
 import { liveData } from "./live";
-import { mockData } from "./mock";
 import { getRemotePaymentLink, isRemoteLinkId } from "./remote";
 import type { PolarisData } from "./types";
 
@@ -9,32 +8,23 @@ export type * from "./types";
 export { DAY, describeDuration, describeInterval, dueAt, quotePlan, WEEK } from "./quote";
 
 /**
- * The one data source every screen reads through. With Polaris for Business
- * configured it is the real one (`live.ts`: the chain, and the API's records
- * of chain events); without it, the offline demo's sample data (`mock.ts`),
- * which the app labels as a demo (`DEMO_MODE`).
+ * The one data source every screen reads through: the chain, and Polaris for
+ * Business's records of chain events (`live.ts`). A build without
+ * `NEXT_PUBLIC_POLARIS_API_URL` has no data at all: the app shows only that
+ * Polaris isn't configured (components/not-configured.tsx).
  */
-export const data: PolarisData = apiConfigured() ? liveData : mockData;
-
-/**
- * Whether the balances, plans and activity on screen are the sample book
- * (`mock.ts`), not the signed-in person's own. The desktop marks every card
- * that shows them with a Sample pill, like the merchant web.
- */
-export const SAMPLE_DATA: boolean = data === mockData;
-
-/** Sample payment links for the Pay screen. Empty once real links exist. */
-export { DEMO_LINK_IDS as SAMPLE_LINK_IDS } from "./mock";
+export const data: PolarisData = liveData;
 
 export const getProfile = (owner: Address | null) => data.getProfile(owner);
 export const getBalance = (owner: Address | null) => data.getBalance(owner);
 export const getCreditLine = (owner: Address | null) => data.getCreditLine(owner);
+export const getBoost = (owner: Address | null) => data.getBoost(owner);
 export const getCreditGuard = () => data.getCreditGuard();
 export const getPlans = (owner: Address | null) => data.getPlans(owner);
 export const getActivity = (owner: Address | null) => data.getActivity(owner);
 export const getContacts = (owner: Address | null) => data.getContacts(owner);
-/** Checkout sessions (`cs_…`) and payment links (`pl_…`) come from Polaris for Business; sample slugs from the sample data. */
-export const getPaymentLink = (id: string) => (apiConfigured() && isRemoteLinkId(id) ? getRemotePaymentLink(id) : data.getPaymentLink(id));
+/** Checkout sessions (`cs_…`) and payment links (`pl_…`), from Polaris for Business. Anything else, or no API: no link. */
+export const getPaymentLink = (id: string) => (apiConfigured() && isRemoteLinkId(id) ? getRemotePaymentLink(id) : Promise.resolve(null));
 export const getSendLink = (linkKey: Address) => data.getSendLink(linkKey);
 export const getSplit = (id: Hex, viewer: Address | null) => data.getSplit(id, viewer);
 export const getSplits = (owner: Address | null) => data.getSplits(owner);

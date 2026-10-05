@@ -1,15 +1,11 @@
 "use client";
 
-import { AssetRow, Button, Input, ScanFrame, ScreenHeader, SecondaryButton, SectionHeader, Sheet, Skeleton, useIsDesktop } from "@polaris/ui";
+import { Button, Input, ScanFrame, ScreenHeader, SecondaryButton, Sheet, useIsDesktop } from "@polaris/ui";
 import { ClipboardPaste, ScanLine, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { MerchantAvatar } from "@/components/avatars";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
-import { getPaymentLink, type PaymentLink, SAMPLE_DATA, SAMPLE_LINK_IDS } from "@/lib/data";
-import { useData } from "@/lib/data/hooks";
 import { toAppPath } from "@/lib/links";
-import { usd } from "@/lib/money";
 
 type Detector = { detect: (source: CanvasImageSource) => Promise<Array<{ rawValue: string }>> };
 type DetectorCtor = new (options: { formats: string[] }) => Detector;
@@ -38,7 +34,7 @@ function useOpenLink(cold: boolean): (path: string) => void {
   return useCallback((path: string) => (cold ? router.push(path, { scroll: false }) : router.replace(path, { scroll: false })), [cold, router]);
 }
 
-/** Pay or claim a link (full): scan a Polaris code, paste a link, or try a sample. */
+/** Pay or claim a link (full): scan a Polaris code or paste a link. */
 export function PaySheet({ cold = false }: { cold?: boolean }) {
   const go = useOpenLink(cold);
   const close = useCloseSheet();
@@ -155,9 +151,6 @@ export function PaySheet({ cold = false }: { cold?: boolean }) {
         </ScanFrame>
 
         {desktop ? null : pasteForm}
-
-        {/* Sample links exist only in the offline demo; with Polaris for Business every link is a real one. */}
-        {SAMPLE_DATA ? <SampleLinks cold={cold} /> : null}
       </Sheet.Body>
     </div>
   );
@@ -222,36 +215,6 @@ function PasteForm({
   );
 }
 
-/** Placeholder merchants' links, so every checkout path can be tried. */
-function SampleLinks({ cold }: { cold: boolean }) {
-  const go = useOpenLink(cold);
-  const links = useData(
-    async () => (await Promise.all(SAMPLE_LINK_IDS.map((id) => getPaymentLink(id)))).filter((l): l is PaymentLink => l !== null),
-    [],
-  );
-  return (
-    <>
-      <SectionHeader title="Try a sample link" className="mt-2" />
-      <div className="flex flex-col gap-2">
-        {links.value
-          ? links.value.map((link) => (
-              <AssetRow
-                key={link.id}
-                leading={<MerchantAvatar name={link.merchant.name} />}
-                title={link.merchant.name}
-                subtitle={link.description}
-                value={usd(link.amount, { trim: true })}
-                meta={link.modes.later ? "Pay in 4" : link.modes.subscription ? "Monthly" : "Pay now"}
-                trend="flat"
-                onClick={() => go(`/pay/${link.id}`)}
-              />
-            ))
-          : [0, 1, 2].map((i) => <Skeleton key={i} shape="row" height={72} />)}
-      </div>
-    </>
-  );
-}
-
 /** The route: the intercepting page in app/@sheet (over the current tab), or the page itself (cold, over its tab). */
 export function PayRoute({ cold }: { cold?: boolean }) {
   return (
@@ -259,7 +222,7 @@ export function PayRoute({ cold }: { cold?: boolean }) {
       label="Pay or claim a link"
       snapPoints={["full"]}
       cold={cold}
-      desktop={{ as: "dialog", size: "md", title: "Pay or claim", description: SAMPLE_DATA ? "Paste a Polaris link, or try a sample. On your phone, point the camera at the code." : "Paste a Polaris link. On your phone, point the camera at the code." }}
+      desktop={{ as: "dialog", size: "md", title: "Pay or claim", description: "Paste a Polaris link. On your phone, point the camera at the code." }}
     >
       <PaySheet cold={cold} />
     </RouteSheet>

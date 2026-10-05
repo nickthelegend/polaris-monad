@@ -120,7 +120,7 @@ export function RegistrationNotice({ className }: { className?: string }) {
           </Button>
         }
       >
-        The relayer has sent your registration; it confirms in about a second. <TxLink hash={merchant.registration?.txHash ?? null} sample={false} />
+        The relayer has sent your registration; it confirms in about a second. <TxLink hash={merchant.registration?.txHash ?? null} />
       </Notice>
     );
   }

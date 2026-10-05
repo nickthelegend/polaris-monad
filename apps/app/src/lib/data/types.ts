@@ -33,6 +33,13 @@ export type Balance = {
   updatedAt: number;
 };
 
+/** Boost: dollars the account locked in CollateralVault, which ScoreManager adds to its Pay later limit. */
+export type Boost = {
+  /** `CollateralVault.lockedOf(owner)`, base units (6 decimals). */
+  locked: Micros;
+  updatedAt: number;
+};
+
 export type CreditReason = {
   /** Plain language, e.g. "3 instalments paid on time". */
   label: string;
@@ -56,14 +63,13 @@ export type CreditLine = {
   historyLinked: boolean;
   /** The opening line never goes past this; higher tiers come from repaying. */
   openingCap: Micros;
-  /** When the line opened (the CRE decision); null when not known. The sample book leaves it out. */
+  /** When the line opened (the CRE decision); null when not known. */
   openedAt?: number | null;
   /** The score the line opened with; its history starts there. */
   openingScore?: number | null;
   /**
    * The report behind the line: the transaction the Chainlink CRE
-   * underwriting workflow wrote, and when. Null until one exists (and in the
-   * offline demo, whose line nobody attested).
+   * underwriting workflow wrote, and when. Null until one exists.
    */
   verified: CreditProvenance | null;
 };
@@ -231,8 +237,9 @@ export type PaymentLink = {
   successUrl: string | null;
   status: "open" | "paid" | "expired";
   /**
-   * Set when this is a real checkout session from Polaris for Business
-   * (`/api/public/sessions/{id}`); absent for sample links.
+   * The checkout session from Polaris for Business
+   * (`/api/public/sessions/{id}`). Every link the app loads has one
+   * (`remote.ts`); the type allows none for links built elsewhere (tests).
    */
   session?: CheckoutSessionInfo;
 };
@@ -300,27 +307,26 @@ export type SplitStatus = {
   shares: SplitShare[];
   createdAt: number | null;
   closedAt: number | null;
-  /** The offline demo's sample splits carry their words; a real split's come from its link. */
-  sampleMemo?: { description: string; organiserName: string; billTotal: Micros; labels: string[] };
 };
 
 /**
- * Every read the app makes. `mock.ts` implements it with placeholder data; a
- * later step swaps in chain reads and the Envio indexer behind the same
- * shape, so no screen changes.
+ * Every read the app makes, implemented by `live.ts` (the chain, and Polaris
+ * for Business's records of chain events).
  */
 export interface PolarisData {
   getProfile(owner: Address | null): Promise<Profile>;
   getBalance(owner: Address | null): Promise<Balance>;
   getCreditLine(owner: Address | null): Promise<CreditLine>;
-  /** The risk guard now; null when there is none to show (the offline demo). */
+  /** What the account has locked in Boost; null when the network has no CollateralVault (the app then shows no Boost). */
+  getBoost(owner: Address | null): Promise<Boost | null>;
+  /** The risk guard now; null when there is none to show. */
   getCreditGuard(): Promise<CreditGuardView | null>;
   getPlans(owner: Address | null): Promise<{ plans: Plan[]; subscriptions: Subscription[] }>;
   getActivity(owner: Address | null): Promise<ActivityItem[]>;
   getContacts(owner: Address | null): Promise<Person[]>;
   getPaymentLink(id: string): Promise<PaymentLink | null>;
   getSendLink(linkKey: Address): Promise<SendLinkStatus | null>;
-  /** A split by its id, or null when there is none. `viewer` is who is looking (the offline demo's own splits are theirs). */
+  /** A split by its id, or null when there is none. `viewer` is who is looking. */
   getSplit(id: Hex, viewer: Address | null): Promise<SplitStatus | null>;
   /** The splits this account organised, newest first. */
   getSplits(owner: Address | null): Promise<SplitStatus[]>;

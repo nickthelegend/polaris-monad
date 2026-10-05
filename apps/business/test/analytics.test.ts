@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { salesSeries, type SeriesFrame } from "@/lib/data/analytics";
-import { createSampleBook, SAMPLE_MERCHANT } from "@/lib/data/sample";
+import { testPayments } from "./helpers/payments";
 
 /**
  * The Overview's line (ref E): a smoothed running total over the chart's own
@@ -11,7 +11,7 @@ import { createSampleBook, SAMPLE_MERCHANT } from "@/lib/data/sample";
 const NOW = Date.UTC(2026, 8, 27, 15, 7);
 
 describe("salesSeries", () => {
-  const { payments } = createSampleBook(SAMPLE_MERCHANT, NOW);
+  const payments = testPayments(NOW);
 
   it.each<SeriesFrame>(["1h", "24h", "1w", "1m"])("is a running total at %s: 0 at the left edge, monotone, ending at the gross", (frame) => {
     const s = salesSeries(payments, frame, { now: NOW });
@@ -21,7 +21,7 @@ describe("salesSeries", () => {
     for (let i = 1; i < values.length; i++) expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]!);
   });
 
-  it("has sales in the sample day, so the 24h line rises from 0 to the headline", () => {
+  it("has sales in the last day, so the 24h line rises from 0 to the headline", () => {
     const s = salesSeries(payments, "24h", { now: NOW });
     expect(s.grossCents).toBeGreaterThan(0);
     expect(s.points.at(-1)!.value).toBe(s.grossCents / 100);

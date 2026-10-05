@@ -63,8 +63,8 @@ function ease(t: number, from: number, to: number): number {
 type Origin = {
   /**
    * When the account (or the line) was opened: nothing before it is drawn.
-   * null: not known (only the moves are). Left out (the sample book, which
-   * has no opening): the whole frame, as the moves draw it.
+   * null: not known (only the moves are). Left out: the whole frame, as the
+   * moves draw it.
    */
   since?: number | null;
   /** The figure when it opened: 0 for a dollar account, the limit for a Pay later line. */
@@ -181,9 +181,14 @@ export function creditSeries(credit: CreditLine, plans: Plan[], frame: Frame, no
   return build(toNumber(credit.available), steps, frame, now, { since: credit.openedAt, base: toNumber(credit.limit) });
 }
 
-/** Boost holds nothing yet: a flat zero. */
-export function emptySeries(frame: Frame, now: number): Series {
-  return build(0, [], frame, now, { since: now - FRAMES[frame].span, base: 0 });
+/**
+ * Boost: what is locked in the vault now. The app reads the figure, not the
+ * vault's history, so it claims none: nothing locked is the empty chart, and
+ * dollars locked are today's figure alone, with no change over the frame.
+ */
+export function boostSeries(locked: number, frame: Frame, now: number): Series {
+  if (locked < 0.005) return build(0, [], frame, now, { since: now - FRAMES[frame].span, base: 0 });
+  return { ...build(locked, [], frame, now, { since: now, base: locked }), deltaPct: null, explained: false };
 }
 
 /** Money out per bucket over the frame, as a smooth line (Insights). */

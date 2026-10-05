@@ -52,11 +52,12 @@
  *     (a random local session token; see server/auth.ts `localSession`);
  *  3. the CRE underwriting trigger's local fallback (workflows, trigger:local)
  *     on :2000: "Bring your history" in the app runs the real underwriting
- *     workflow handler against the local chain, with fixture evidence;
+ *     workflow handler against the local chain, reading its data providers
+ *     live (see below);
  *  4. the Polaris app (apps/app) on :3000: the hosted checkout, with the dev
  *     signer standing in for Face ID, reading everything from the API;
  *  5. Halcyon, the demo shop (apps/shop), on :3600, paying through
- *     polarispay-sdk against the real API and checkout (no dev mock);
+ *     polarispay-sdk against the real API and checkout;
  *  6. a local faucet on :3650 for test dollars (MockAUSD, minted), which the
  *     app's Add money sheet offers on this chain;
  *  7. the CRE collections workflow's local stand-in (workflows,
@@ -75,9 +76,11 @@
  *     it, a mainnet feed that cannot be read falls back to the mock, and the
  *     banner says so.
  *
- * In both modes the underwriting trigger gives the account and the linked
- * wallet histories from @polarispay/underwriting's fixture personas (no
- * Nansen, Zerion or Etherscan call), and says so.
+ * In both modes the underwriting trigger reads Nansen, Zerion and Etherscan
+ * live with the keys in its environment or workflows/.env (NANSEN_API_KEY,
+ * ZERION_API_KEY, ETHERSCAN_API_KEY). A review that needs a provider with no
+ * key opens no line, and Raise your limit says which key is missing; nothing
+ * answers in a provider's place.
  *
  * `node scripts/demo-chainlink.mjs` drives the Chainlink scenes on a running
  * demo (the guardian's demo threshold, a lost approval); `pnpm
@@ -871,7 +874,9 @@ Split a bill: in the app, More (or Split a bill on the desktop) → the bill,
 equally or by name → one link; open it in another browser profile to pay a
 share (a new visitor creates an account there, then Add money). Every share is PolarisSplit on this chain, relayed.
 Pay in 4 needs a credit line: in the checkout, Raise your limit runs the CRE
-underwriting workflow locally (sample history from fixtures, not Nansen).
+underwriting workflow locally, reading Nansen, Zerion and Etherscan live with
+the keys in workflows/.env; without them it opens no line and says which key
+is missing.
 The CRE collections workflow runs every minute and on every Reauthorized
 (.demo/logs/cre-collections.log); instalments are ${FAST_PLANS ? "a minute apart (DEMO_FAST_PLANS=1)" : "a week apart (DEMO_FAST_PLANS=1 makes them a minute)"}.
 The CRE guardian runs every minute (.demo/logs/cre-guardian.log): ${guardianPrice.why}.

@@ -287,7 +287,7 @@ async function checkApp(ctx) {
     if (devSwitches.length === 0) r.pass("dev-signer", "No dev signer, no local demo switches: accounts are Face ID (and email, when Privy is set).");
     else r.fail("dev-signer", `Built with ${devSwitches.join(", ")} on. Unset NEXT_PUBLIC_DEV_SIGNER, NEXT_PUBLIC_DEV_SIGNER_PERSIST, NEXT_PUBLIC_LOCAL_DEMO and NEXT_PUBLIC_LOCAL_FAUCET_URL and rebuild.`);
 
-    if (!info.apiUrl) r.fail("api-url", "NEXT_PUBLIC_POLARIS_API_URL is unset: the app is the offline demo. Set it to Polaris for Business and rebuild.");
+    if (!info.apiUrl) r.fail("api-url", "NEXT_PUBLIC_POLARIS_API_URL is unset: the app only says Polaris isn't configured on this build and signs nothing. Set it to Polaris for Business and rebuild.");
     else if (same(new URL(info.apiUrl).origin, urls.business)) r.pass("api-url", `Talks to Polaris for Business at ${urls.business}.`);
     else r.fail("api-url", `NEXT_PUBLIC_POLARIS_API_URL is ${info.apiUrl}, not ${urls.business}.`);
 
@@ -492,15 +492,14 @@ async function checkShop(ctx) {
     r.fail("health", `${origin}/api/health answered ${described(res)}: an older build, or not Halcyon.`);
   } else {
     r.pass("health", "/api/health answers.");
-    if (health.production && !health.devMock) r.pass("dev-mock", "A production build, with no dev mock of the Polaris API.");
-    else r.fail("dev-mock", `${health.devMock ? "The dev mock is built in" : "Not a production build"}: deploy with next build.`);
+    if (health.production) r.pass("production", "A production build.");
+    else r.fail("production", "Not a production build: deploy with next build and next start.");
 
     const polaris = health.polaris;
     if (!polaris?.configured) {
-      r.fail("polaris", `Payments are off: ${polaris?.reason ?? "no Polaris configuration"}`);
+      r.fail("polaris", `Payments aren't configured: ${polaris?.reason ?? "no Polaris configuration"}`);
     } else {
-      if (polaris.target !== "backend") r.fail("polaris", "The shop pays through its dev mock, not Polaris for Business.");
-      else if (same(polaris.apiBase, urls.business)) r.pass("polaris", `Pays through Polaris for Business at ${urls.business} (${polaris.publishableKeyMode} keys).`);
+      if (same(polaris.apiBase, urls.business)) r.pass("polaris", `Pays through Polaris for Business at ${urls.business} (${polaris.publishableKeyMode} keys).`);
       else r.fail("polaris", `POLARIS_API_BASE is ${polaris.apiBase}, expected ${urls.business}.`);
       if (same(polaris.checkoutOrigin, urls.app)) r.pass("checkout-origin", `Opens the checkout at ${urls.app}.`);
       else r.fail("checkout-origin", `NEXT_PUBLIC_POLARIS_CHECKOUT_ORIGIN is ${polaris.checkoutOrigin}, expected ${urls.app}: the popup's results would be ignored.`);
@@ -521,10 +520,6 @@ async function checkShop(ctx) {
     else if (store.kind === "memory") r.warn("order-store", "Orders are kept in memory: a restart loses them.");
     else r.pass("order-store", "Orders are kept on this server's disk (a long-lived host).");
   }
-
-  const mock = await request(`${origin}/api/dev-polaris/api/v1/checkout/sessions`);
-  if (mock.status === 404) r.pass("dev-mock-routes", "The dev mock's routes don't exist in this build.");
-  else r.fail("dev-mock-routes", `/api/dev-polaris answered ${described(mock)}: the dev mock shipped.`);
 
   const hook = await request(`${origin}/api/webhooks/polaris`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   if (hook.status === 400 || hook.status === 401) r.pass("webhook", `The webhook endpoint refuses an unsigned event (${hook.status}).`);

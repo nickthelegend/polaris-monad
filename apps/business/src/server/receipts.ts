@@ -364,7 +364,7 @@ export async function sealBacklog(owner: Address, inbox: Hex): Promise<number> {
   }
 
   for (const p of await db.payments.find({ payer: who })) {
-    if (p.receiptId || p.sample || p.mismatch) continue;
+    if (p.receiptId || p.mismatch) continue;
     const merchant = await merchantOf(p.merchantId);
     if (!merchant) continue;
     const session = await sessionOf(p.sessionId);

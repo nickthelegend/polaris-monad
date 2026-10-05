@@ -250,11 +250,23 @@ describe("POST /api/checkout (the store's origin)", () => {
 });
 
 describe("POST /api/checkout (not configured)", () => {
-  it("never falls back to the dev mock outside development", async () => {
-    vi.stubEnv("POLARIS_API_BASE", "");
-    vi.stubEnv("NODE_ENV", "production");
-    const res = await post(checkoutBody(), "hc_attempt_prod_1");
-    expect(res.status).toBe(503);
-    expect(calls).toHaveLength(0);
-  });
+  for (const nodeEnv of ["production", "development"]) {
+    it(`says payments aren't configured, places no order and calls nothing (${nodeEnv})`, async () => {
+      vi.stubEnv("POLARIS_API_BASE", "");
+      vi.stubEnv("POLARIS_SECRET_KEY", "");
+      vi.stubEnv("NODE_ENV", nodeEnv);
+      const res = await post(checkoutBody(), `hc_attempt_${nodeEnv}_1`);
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { error: { code: string; message: string; detail?: string } };
+      expect(body.error.code).toBe("payments_not_configured");
+      expect(body.error.message).toBe("Payments aren't configured on this store.");
+      // Which settings are missing only in development; never a session URL, never "paid".
+      if (nodeEnv === "development") expect(body.error.detail).toMatch(/POLARIS_API_BASE, POLARIS_SECRET_KEY/);
+      else expect(body.error.detail).toBeUndefined();
+      expect(body).not.toHaveProperty("checkout");
+      expect(body).not.toHaveProperty("order");
+      expect(calls).toHaveLength(0);
+      expect(Object.keys((await orderStore().read()).orders)).toHaveLength(0);
+    });
+  }
 });

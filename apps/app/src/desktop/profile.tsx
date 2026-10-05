@@ -32,7 +32,7 @@ import { monthYear } from "@/lib/dates";
 import { currencyForLocale, localCurrencyHint, localCurrencyOptions } from "@/lib/money";
 import { setPrefs, useLocale, usePrefs } from "@/lib/prefs";
 import { n } from "@/lib/view";
-import { PageCoin, PageGrid, PageHead, SectionTitle, SideNote, withSample } from "./bits";
+import { PageCoin, PageGrid, PageHead, SectionTitle, SideNote } from "./bits";
 
 const HOW: { icon: ReactNode; tone: "lime" | "purple" | "teal" | "orange"; title: string; body: string }[] = [
   { icon: <ScanFace />, tone: "lime", title: "Your account is your Face ID", body: "No password, nothing to write down. Or use your email: the same account on any device." },
@@ -79,7 +79,7 @@ export function ProfileDesktop() {
                 <p className="truncate text-[36px] leading-none font-medium tracking-[-0.03em]">{name || "Your account"}</p>
                 <p className="mt-2 truncate text-[15px] text-ui-muted">
                   {state.status === "none"
-                    ? "A sample account. Create yours in a second."
+                    ? "No account on this device yet. Create yours in a second."
                     : source === "privy" && email
                       ? email
                       : profile.value
@@ -139,7 +139,6 @@ export function ProfileDesktop() {
               <BalanceSummaryCard
                 label="Dollar account"
                 value={<Money value={n(balance.available)} />}
-                badge={withSample()}
                 stats={[
                   { label: "Score", value: credit.score },
                   { label: "Plans", value: plans.value.plans.filter((p) => p.status === "active").length },

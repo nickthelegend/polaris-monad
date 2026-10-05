@@ -7,7 +7,7 @@ import { afterResponse } from "../background";
 import { getDb } from "../db";
 import { HttpError } from "../http";
 import { syncChain } from "../ingest/sync";
-import { recordDecision } from "./underwriting";
+import { recordDecision, recordUnavailable } from "./underwriting";
 
 /**
  * `POST /api/cre/callback`: what the CRE workflows report after a run, signed
@@ -16,6 +16,11 @@ import { recordDecision } from "./underwriting";
  * - `credit.underwritten` / `credit.refused` / `credit.thin` (underwriting):
  *   the decision for the account is recorded, its request closed, and the
  *   app's credit screen shows it (`GET /api/public/credit/{account}`).
+ * - `credit.unavailable` (underwriting): the review needs a data provider the
+ *   workflow has no key for (`notConfigured`: Nansen, Zerion or Etherscan).
+ *   No decision is recorded, since nothing was decided; the account's open
+ *   request fails with a sentence naming the provider and its key, which
+ *   "Raise your limit" shows instead of waiting.
  * - `collections.run`: a collections report landed; the chain sync runs now
  *   rather than on its next tick, so instalment webhooks and dunning follow
  *   at once. The chain events stay the source of truth: the callback only
@@ -30,7 +35,16 @@ import { recordDecision } from "./underwriting";
  * and ignored.
  */
 
-type Payload = { id?: unknown; type?: unknown; user?: unknown; linkedWallet?: unknown; score?: unknown; reason?: unknown; txHash?: unknown };
+type Payload = {
+  id?: unknown;
+  type?: unknown;
+  user?: unknown;
+  linkedWallet?: unknown;
+  score?: unknown;
+  reason?: unknown;
+  txHash?: unknown;
+  notConfigured?: unknown;
+};
 
 const DECISIONS = { "credit.underwritten": "applied", "credit.refused": "refused", "credit.thin": "thin" } as const;
 
@@ -46,8 +60,9 @@ export async function handleCreCallback(raw: string): Promise<{ id: string; type
   }
   const { id, type } = payload as { id: string; type: string };
   const decision = DECISIONS[type as keyof typeof DECISIONS];
+  const unavailable = type === "credit.unavailable";
   let user: Address | null = null;
-  if (decision) {
+  if (decision || unavailable) {
     if (typeof payload.user !== "string" || !isAddress(payload.user, { strict: false })) {
       throw new HttpError(400, "invalid_body", `${type} needs the user's address.`, { param: "user" });
     }
@@ -72,6 +87,12 @@ export async function handleCreCallback(raw: string): Promise<{ id: string; type
         reason: typeof payload.reason === "string" ? payload.reason.slice(0, 500) : null,
         linkedWallet: linked,
         txHash: typeof payload.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(payload.txHash) ? (payload.txHash as Hex) : null,
+      });
+    } else if (unavailable && user) {
+      const named = Array.isArray(payload.notConfigured) ? payload.notConfigured : [];
+      await recordUnavailable({
+        user,
+        providers: named.map((n) => (n && typeof n === "object" ? (n as { provider?: unknown }).provider : n)).filter((p): p is string => typeof p === "string"),
       });
     } else if (type === "collections.run") {
       afterResponse("cre: chain sync", () => syncChain());

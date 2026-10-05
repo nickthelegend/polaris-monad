@@ -24,6 +24,8 @@
  *      `confidentialHttp`, through Chainlink's Confidential HTTP enclave: each
  *      paid call made once, its key resolved inside the enclave and never
  *      read by the workflow (./evidence.ts).
+ *      A provider without its key is not configured: never called, never
+ *      stood in for, and what only it reads is absent (no points).
  *   4. Only a final set of facts is reported, and never a thin file (./thin.ts):
  *      facts that show nothing a brand-new account could not show get no
  *      report, so free accounts cannot farm the $200 floor line. The report
@@ -32,6 +34,12 @@
  *      15 minutes.
  *   5. The receipt says whether ScoreManager applied it (`UnderwritingApplied`
  *      with the score) or refused it, and why.
+ *
+ * When nothing can be attested only for want of provider keys (a history
+ * wallet's risk checks need Nansen; or a thin file whose history no
+ * configured provider could read), the run is "unavailable": no report, and a
+ * signed `credit.unavailable` callback naming the providers and the variables
+ * that would configure them, so the API can tell the buyer instead of waiting.
  */
 
 import {
@@ -45,7 +53,7 @@ import {
 } from "@chainlink/cre-sdk";
 // Aave V3 pools by chain: the config names chains, the package holds the allowlisted pools.
 import { scoreManagerAbi, underwritingReceiverAbi } from "@polarispay/contracts/abi";
-import { LIQUIDATION_POOLS as LIQUIDATION_POOLS_BY_CHAIN, scoreFromFacts } from "@polarispay/underwriting/core";
+import { LIQUIDATION_POOLS as LIQUIDATION_POOLS_BY_CHAIN, PROVIDER_KEYS, scoreFromFacts } from "@polarispay/underwriting/core";
 import { type Abi, type Address, decodeErrorResult, type Hex, parseAbi, zeroAddress } from "viem";
 import { z } from "zod";
 import { address, callbackSchema, chainSelectorName, gasSchema, httpUrl } from "../shared/config.ts";
@@ -159,7 +167,7 @@ interface ChainProfile {
 export const REFUSAL_ERRORS: Abi = [...scoreManagerAbi, ...underwritingReceiverAbi].filter((x) => x.type === "error");
 
 export interface UnderwritingResult {
-  status: "applied" | "refused" | "incomplete" | "thin" | "skipped" | "rejected" | "dry-run";
+  status: "applied" | "refused" | "incomplete" | "thin" | "unavailable" | "skipped" | "rejected" | "dry-run";
   user: Address;
   linkedWallet: Address | null;
   reason: string | null;
@@ -167,6 +175,10 @@ export interface UnderwritingResult {
   expectedScore: number | null;
   onChainScore: number | null;
   missing: string[];
+  /** What no configured provider could read: absent, no points. */
+  absent: string[];
+  /** Keyed providers this run needed and has no key for (`nansen`, `zerion`, `etherscan`). */
+  notConfigured: string[];
   httpCalls: number | null;
   txHash: string | null;
   gasLimit: string | null;
@@ -196,13 +208,15 @@ function postDecision(
   runtime: Runtime<UnderwritingConfig>,
   d: {
     id: string;
-    type: "credit.underwritten" | "credit.refused" | "credit.thin";
+    type: "credit.underwritten" | "credit.refused" | "credit.thin" | "credit.unavailable";
     now: number;
     user: Address;
     wallet: Address | null;
     score: number | null;
     reason: string | null;
     txHash: string | null;
+    /** For `credit.unavailable`: the providers, and the variable each needs. */
+    notConfigured?: Array<{ provider: string; env: string }>;
   },
 ): void {
   const cfg = runtime.config;
@@ -222,6 +236,7 @@ function postDecision(
       score: d.score,
       reason: d.reason,
       txHash: d.txHash,
+      ...(d.notConfigured ? { notConfigured: d.notConfigured } : {}),
     },
   });
 }
@@ -240,6 +255,8 @@ export function onHttpTrigger(runtime: Runtime<UnderwritingConfig>, payload: HTT
     expectedScore: null,
     onChainScore: null,
     missing: [],
+    absent: [],
+    notConfigured: [],
     httpCalls: null,
     txHash: null,
     gasLimit: null,
@@ -341,6 +358,9 @@ export function onHttpTrigger(runtime: Runtime<UnderwritingConfig>, payload: HTT
         ConsensusAggregationByFields<Observation>({
           final: identical,
           missing: identical,
+          absent: identical,
+          notConfigured: identical,
+          unavailable: identical,
           walletAgeDays: median,
           txCount: median,
           stableBalance: median,
@@ -368,11 +388,31 @@ export function onHttpTrigger(runtime: Runtime<UnderwritingConfig>, payload: HTT
     observedAt: BigInt(now),
   };
   const expected = scoreFromFacts(facts);
+  const notConfigured = observation.notConfigured ? observation.notConfigured.split(",") : [];
   const partial: Partial<UnderwritingResult> = {
     expectedScore: expected.score,
     missing: observation.missing ? observation.missing.split(",") : [],
+    absent: observation.absent ? observation.absent.split(",") : [],
+    notConfigured,
     httpCalls: Math.floor(observation.httpCalls),
   };
+  if (observation.unavailable) {
+    // Only a key can finish it: no report, no retry, and the API hears which key.
+    const named = notConfigured.map((p) => ({ provider: p, env: PROVIDER_KEYS[p as keyof typeof PROVIDER_KEYS] ?? `${p.toUpperCase()}_API_KEY` }));
+    const reason = `not configured: ${named.map((n) => `${n.provider} (${n.env})`).join(", ") || "a provider"}; absent: ${observation.absent || "nothing"}`;
+    postDecision(runtime, {
+      id: `unavailable:${user.toLowerCase()}:${input.consent.nonce}`,
+      type: "credit.unavailable",
+      now,
+      user,
+      wallet,
+      score: null,
+      reason,
+      txHash: null,
+      notConfigured: named,
+    });
+    return done({ ...partial, status: "unavailable", reason });
+  }
   if (!observation.final) {
     // Missing data is never attested as zero: no report, the app retries.
     return done({ ...partial, status: "incomplete", reason: `not final: ${observation.missing}` });

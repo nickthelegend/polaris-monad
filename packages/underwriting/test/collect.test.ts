@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import type { Address } from "../src/core/types.ts";
 import { underwrite, type UnderwriteOutcome } from "../src/core/underwrite.ts";
 import { collectAccount, collectLinked, type Issue, type Providers } from "../src/node/collect.ts";
-import { fixtureTransport } from "../src/node/fixtures.ts";
+import { fixtureTransport } from "../src/testing/fixtures.ts";
 import { ACCOUNT, fixtureProviders, host, LINKED, networkDown, NOW, scripted, status } from "./helpers.ts";
 
 async function run(

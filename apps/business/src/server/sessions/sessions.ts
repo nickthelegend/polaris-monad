@@ -551,7 +551,7 @@ export async function openLink(linkId: string): Promise<CheckoutSessionRecord> {
   const db = getDb();
   const config = getConfig();
   const link: LinkRecord | null = await db.links.get(linkId);
-  if (!link || link.sample) throw new HttpError(404, "not_found", "This payment link doesn't exist.");
+  if (!link) throw new HttpError(404, "not_found", "This payment link doesn't exist.");
   if (link.status === "used") throw new HttpError(410, "link_used", "This payment link has already been paid.");
   if (link.status === "inactive") throw new HttpError(410, "link_inactive", "This payment link has been turned off.");
   if (link.status === "expired" || (link.expiresAt && Date.parse(link.expiresAt) <= Date.now())) {

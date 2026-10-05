@@ -18,14 +18,12 @@ import {
   ChevronDown,
   CodeXml,
   Copy,
-  FlaskConical,
   House,
   Landmark,
   Link2,
   LogOut,
   Plus,
   Settings2,
-  Sparkles,
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
@@ -37,7 +35,6 @@ import { CreditGuardBanner } from "@/components/dashboard/guard-banner";
 import { useAuth } from "@/lib/auth-context";
 import { shortAddress } from "@/lib/data/format";
 import type { Merchant } from "@/lib/data/types";
-import { useSample } from "@/lib/session";
 import { markExplicitSignOut } from "@/lib/sign-out";
 
 /** The top nav's links, in the reference's order. */
@@ -141,7 +138,6 @@ function useSignOut() {
 /* ── The signed-in merchant's menu ──────────────────────────────────────── */
 
 export function AccountMenu({ merchant }: { merchant: Merchant }) {
-  const sample = useSample();
   const signOut = useSignOut();
   const name = merchant.businessName ?? "Your business";
 
@@ -175,11 +171,6 @@ export function AccountMenu({ merchant }: { merchant: Merchant }) {
           <StatusPill tone="lime" size="sm">
             Test mode
           </StatusPill>
-          {sample.on ? (
-            <StatusPill tone="amber" size="sm">
-              Sample data
-            </StatusPill>
-          ) : null}
         </span>
       </Menu.Header>
       <Menu.Separator />
@@ -194,25 +185,6 @@ export function AccountMenu({ merchant }: { merchant: Merchant }) {
       <Menu.Item icon={<Settings2 />} href="/dashboard/settings" linkAs={Link}>
         Settings
       </Menu.Item>
-      {sample.canToggle ? (
-        <Menu.Item
-          icon={<Sparkles />}
-          keepOpen
-          onSelect={() => sample.setPreview(!(sample.reason === "preview"))}
-          description="Labelled, and only on this browser"
-          trailing={<span className="text-[13px] font-medium">{sample.reason === "preview" ? "On" : "Off"}</span>}
-        >
-          Preview with sample data
-        </Menu.Item>
-      ) : sample.on ? (
-        <Menu.Item
-          icon={<FlaskConical />}
-          disabled
-          description={process.env.NODE_ENV === "development" && sample.reason === "mock" ? "Development mock session" : "This server's demo data"}
-        >
-          Sample data is on
-        </Menu.Item>
-      ) : null}
       <Menu.Separator />
       <Menu.Item icon={<LogOut />} tone="danger" onSelect={() => void signOut()}>
         Sign out

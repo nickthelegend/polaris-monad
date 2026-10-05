@@ -2,7 +2,7 @@
 
 import type { MiniCard } from "@polaris/ui";
 import { Layers, Sparkles } from "lucide-react";
-import { getBalance, getCreditLine } from "@/lib/data";
+import { getBalance, getBoost, getCreditLine } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { useOwner } from "@/lib/account/hooks";
 import { type HomeAccount, setPrefs, usePrefs } from "@/lib/prefs";
@@ -19,28 +19,31 @@ export type AccountView = MiniCard & {
 };
 
 /**
- * The dollar account's number as a buyer sees it: four digits, like a bank
- * card's, worked out from the account (never its hex tail); the sample
- * account's are 2451.
+ * The account's number as a buyer sees it: four digits, like a bank card's,
+ * worked out from the account (never its hex tail). No account, no digits.
+ * The three faces share it: the Pay later line and Boost are the same
+ * account's, not accounts of their own with numbers of their own.
  */
 export function accountDigits(owner: string | null): string {
-  if (!owner) return "2451";
+  if (!owner) return "····";
   return String(parseInt(owner.slice(-8), 16) % 10000).padStart(4, "0");
 }
 
 /**
  * The account's three faces (refs A and D): the Dollar account you pay and
- * send from, the Pay later line, and Boost (dollars locked to raise the
- * line). Home shows the one picked in Select account.
+ * send from, the Pay later line, and Boost (dollars locked in CollateralVault
+ * to raise the line, read from the chain). A network without the vault has
+ * no Boost. Home shows the one picked in Select account.
  */
 export function useAccounts() {
   const owner = useOwner();
   const balance = useData(() => getBalance(owner), [owner]);
   const credit = useData(() => getCreditLine(owner), [owner]);
+  const boost = useData(() => getBoost(owner), [owner]);
   const { homeAccount } = usePrefs();
   const last4 = accountDigits(owner);
 
-  const ready = balance.value !== undefined && credit.value !== undefined;
+  const ready = balance.value !== undefined && credit.value !== undefined && boost.value !== undefined;
   const accounts: AccountView[] = ready
     ? [
         {
@@ -60,19 +63,23 @@ export function useAccounts() {
           pill: "Pay later",
           caption: `Available of ${Math.round(n(credit.value!.limit)).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}`,
           balance: n(credit.value!.available),
-          last4: "0095",
+          last4,
           tint: "#2e283e",
         },
-        {
-          id: "boost",
-          mark: <Sparkles size={18} strokeWidth={1.75} className="text-ui-yellow" />,
-          title: "Boost",
-          pill: "Boost",
-          caption: "Locked to raise your line",
-          balance: 0,
-          last4: "1122",
-          tint: "#3f273d",
-        },
+        ...(boost.value
+          ? [
+              {
+                id: "boost" as const,
+                mark: <Sparkles size={18} strokeWidth={1.75} className="text-ui-yellow" />,
+                title: "Boost",
+                pill: "Boost",
+                caption: "Locked to raise your line",
+                balance: n(boost.value.locked),
+                last4,
+                tint: "#3f273d",
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -82,5 +89,7 @@ export function useAccounts() {
     select: (id: HomeAccount) => setPrefs({ homeAccount: id }),
     balance: balance.value,
     credit: credit.value,
+    /** Undefined while loading; null when the network has no Boost. */
+    boost: boost.value,
   };
 }

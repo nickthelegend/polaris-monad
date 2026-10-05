@@ -275,7 +275,13 @@ missing; a value in either place always wins), puts the pinned Bun on PATH
 `ZERION_BASIC_AUTH = base64("<ZERION_API_KEY>:")` when `ZERION_API_KEY` is
 set and it is not: the credential Confidential HTTP templates into Zerion's
 header ([Confidential HTTP](#confidential-http)). A bare `cre` run needs
-them in `workflows/.env` (`.env.example` lists them).
+them in `workflows/.env` (`.env.example` lists them). And `cre workflow
+simulate ./underwriting` without `--config` (so `simulate:underwriting` too)
+runs on the target's config with every provider whose key is empty left out
+(`secrets.<provider>: null`, written to `workflows/.local/`): under
+Confidential HTTP the workflow cannot tell an empty key from a real one, so
+this is what makes such a provider "not configured" instead of a 401. With
+every key set, the target's config runs as it is.
 
 For live underwriting, keep the simulator listening and let the API queue
 requests (the HTTP trigger fires at most once per 30 s):
@@ -532,9 +538,28 @@ checked before any provider call, with `linkedUserOf` and
 `credit.refused` callback), `incomplete` (evidence missing,
 no report, retry later: missing data is never attested as zero), `thin`
 (final, but nothing a new account could not show: no report, and a signed
-`credit.thin` callback, see `src/underwriting/thin.ts`), `skipped`
-(already underwritten; no provider call spent), or `rejected` (no consent
-from the account, a bad proof or payload; nothing read or spent).
+`credit.thin` callback, see `src/underwriting/thin.ts`), `unavailable`
+(nothing can be attested for want of a provider key: no report, no retry,
+and a signed `credit.unavailable` callback naming each provider and its
+variable), `skipped` (already underwritten; no provider call spent), or
+`rejected` (no consent from the account, a bad proof or payload; nothing
+read or spent). Every result also carries `notConfigured` (the keyed
+providers the run needed and had no key for) and `absent` (the fields only
+they could read).
+
+**Missing keys.** A provider is live with its key and not configured
+without one: no secret value in node mode, no secret id under Confidential
+HTTP. Its requests get the package's `notConfiguredReply` without being sent
+or counted against the 15-call budget, and nothing ever answers in its
+place. What only it reads is absent: a positive fact earns no points (the
+report may still go out), while an unreadable risk check (Nansen's first
+funder, cluster and labels; Etherscan's liquidations) leaves the history
+wallet out and makes the run `unavailable`, because the account's one
+underwriting should not be spent, and the wallet bound to it, without its
+history. A thin file whose age or activity was absent is `unavailable` too,
+never `thin`. The run log names the providers (`not configured: nansen`), and
+the API turns the callback into "This review needs Nansen, which isn't set up
+on this server yet (NANSEN_API_KEY)". The report format is unchanged.
 
 With `confidentialHttp: false`, node mode sends each request with
 `cacheSettings: { store: true, maxAge }`, so one node's paid Nansen call
@@ -917,12 +942,12 @@ overhead added), as on the simulation forwarder on testnet:
 | Monad mainnet reads | every target reads `monad-mainnet` (public RPC); nothing writes there |
 | Confidential HTTP | on in staging and local; production off until a deployed run shows Monad's DON serves it. Implemented and unit-tested; not yet exercised against the real capability (needs a CLI run with a provider key) |
 | Deploy to the DON | waits for deploy access (`cre account access`) |
-| The Polaris API side of the callback | done: `apps/business` `POST /api/cre/callback` verifies the HMAC (`POLARIS_CRE_CALLBACK_SECRET`), records `credit.underwritten` / `credit.refused` / `credit.thin` for the app, and runs the chain sync on `collections.run`. The committed configs keep `callback: null` until a deployment has an API URL to put there |
+| The Polaris API side of the callback | done: `apps/business` `POST /api/cre/callback` verifies the HMAC (`POLARIS_CRE_CALLBACK_SECRET`), records `credit.underwritten` / `credit.refused` / `credit.thin` for the app, fails the buyer's request on `credit.unavailable` with the provider and key it needs, and runs the chain sync on `collections.run`. The committed configs keep `callback: null` until a deployment has an API URL to put there |
 | Firing `polaris-underwrite` from the product | done: the app's **Raise your limit** (Bring your history) signs the consent and the history wallet's proof; `apps/business` `POST /api/credit/underwrite` verifies both and fires the HTTP trigger at most once per 30 s (`CRE_UNDERWRITING_TRIGGER_URL`) |
-| Without a CRE login | Three local runners, each the real handler on the SDK's test runtime against a local chain (not the CLI or a DON), all started by `pnpm demo:local`: `trigger:local` (`scripts/local-trigger.mjs`) serves the underwriting trigger URL (fixture evidence, the local forwarder) and posts its signed callback; `collections:local` runs `polaris-collections` on both triggers, the cron every minute and the log trigger on every `PolarisCheckout.Reauthorized` the node emits (the log handed over from its receipt, as the DON does); `guardian:local` runs `polaris-guardian` every minute, reading **Chainlink's AUSD/USD on Monad mainnet** over `https://rpc.monad.xyz` through a bridge that refuses any write (`POLARIS_LOCAL_GUARDIAN_PRICE=mock` reads the labelled local mock offline). The root `pnpm demo:e2e:chainlink` plays all three in the product, headless |
+| Without a CRE login | Three local runners, each the real handler on the SDK's test runtime against a local chain (not the CLI or a DON), all started by `pnpm demo:local`: `trigger:local` (`scripts/local-trigger.mjs`) serves the underwriting trigger URL (the providers live with the keys in `workflows/.env`, each one without its key not configured; the local forwarder) and posts its signed callback; `collections:local` runs `polaris-collections` on both triggers, the cron every minute and the log trigger on every `PolarisCheckout.Reauthorized` the node emits (the log handed over from its receipt, as the DON does), with candidates from the chain, or from the Envio indexer's `DueCandidates` when `POLARIS_LOCAL_INDEXER_URL` names one (`pnpm indexer:local`; see `packages/indexer/README.md`); `guardian:local` runs `polaris-guardian` every minute, reading **Chainlink's AUSD/USD on Monad mainnet** over `https://rpc.monad.xyz` through a bridge that refuses any write (`POLARIS_LOCAL_GUARDIAN_PRICE=mock` reads the labelled local mock offline). The root `pnpm demo:e2e:chainlink` plays all three in the product, headless |
 | The indexer schema | `DUE_CANDIDATES_QUERY` is the indexer client's `DUE_CANDIDATES`, validated against `packages/indexer/schema.graphql` |
 | Dunning backoff without the indexer | done: the ladder from each task's due time (`candidates.chainBackoff`) |
-| Provider calls | Nansen, Zerion and Etherscan have only answered from synthesized fixtures here; a live run needs their keys in `workflows/.env` |
+| Provider calls | No live Nansen, Zerion or Etherscan call has run here yet; the tests answer them from synthesized fixtures (test doubles only). With keys in `workflows/.env`, `trigger:local`, `simulate:underwriting` and `evidence` call them live; without one, that provider is reported as not configured |
 
 ## Limits that shaped this (docs/research/cre.md §8)
 

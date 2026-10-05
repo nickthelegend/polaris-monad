@@ -1,7 +1,8 @@
 /**
  * CRE's HTTP capability, answered from @polarispay/underwriting's fixtures
  * (synthesized in each provider's documented shape; see
- * packages/underwriting/fixtures/README.md). No network, no keys.
+ * packages/underwriting/fixtures/README.md). No network, no keys. A test
+ * double: tests and the e2e suite only, never a runner in local/.
  *
  * It also records what the workflow sent, so tests can check that keys ride
  * in headers (Etherscan: its query parameter), never elsewhere, and that
@@ -9,32 +10,19 @@
  */
 
 import { join } from "node:path";
-import { DEFAULT_FIXTURES_DIR, fixtureResponse } from "@polarispay/underwriting";
+import { DEFAULT_FIXTURES_DIR, fixtureResponse } from "@polarispay/underwriting/testing";
+import type { ConfidentialSent, SentRequest } from "../../local/requests.ts";
 import { fs, os } from "./host.ts";
 
-export interface SentRequest {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body: string | undefined;
-  cached: boolean;
-}
+export {
+  type ConfidentialRequestLike,
+  type ConfidentialSent,
+  type CreRequestLike,
+  type SentRequest,
+  toSent,
+  toSentConfidential,
+} from "../../local/requests.ts";
 
-/** The Request message the HTTP mock receives, reduced to what we read. */
-export interface CreRequestLike {
-  url: string;
-  method: string;
-  body: Uint8Array;
-  multiHeaders: Record<string, { values: string[] }>;
-  cacheSettings?: { store?: boolean };
-}
-
-export function toSent(input: CreRequestLike): SentRequest {
-  const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(input.multiHeaders ?? {})) headers[k.toLowerCase()] = v.values[0] ?? "";
-  const body = input.body && input.body.length > 0 ? new TextDecoder().decode(input.body) : undefined;
-  return { url: input.url, method: input.method, headers, body, cached: input.cacheSettings?.store === true };
-}
 
 /** Answer one provider request from the fixtures, the way the provider would. */
 export function answerFromFixtures(sent: SentRequest, dir: string = DEFAULT_FIXTURES_DIR) {
@@ -79,56 +67,6 @@ export function cloneFixtures(pairs: Array<{ from: string; to: string }>): strin
   return dir;
 }
 
-/** The ConfidentialHTTPRequest message the Confidential HTTP mock receives, reduced to what we read. */
-export interface ConfidentialRequestLike {
-  vaultDonSecrets: Array<{ key: string }>;
-  request?: {
-    url: string;
-    method: string;
-    body?: { case?: string; value?: unknown };
-    multiHeaders: Record<string, { values: string[] }>;
-    encryptOutput?: boolean;
-  };
-}
-
-export interface ConfidentialSent {
-  /** The request as the workflow built it: placeholders, never a key. */
-  built: SentRequest;
-  /** The secret ids it asked the enclave for. */
-  secretKeys: string[];
-  /** The request as the enclave sends it, placeholders resolved. */
-  resolved: SentRequest;
-}
-
-/**
- * Resolve `{{.KEY}}` placeholders the way the enclave does (in headers and a
- * body; chainlink's simulator uses Go's text/template the same way), with the
- * stricter rule a real enclave has: only the secrets the request lists.
- */
-export function toSentConfidential(input: ConfidentialRequestLike, values: Record<string, string>): ConfidentialSent {
-  const r = input.request;
-  if (!r) throw new Error("confidential request without a request");
-  const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(r.multiHeaders ?? {})) headers[k.toLowerCase()] = v.values[0] ?? "";
-  const body = r.body?.case === "bodyString" ? String(r.body.value) : undefined;
-  const built: SentRequest = { url: r.url, method: r.method, headers, body, cached: false };
-  const secretKeys = input.vaultDonSecrets.map((s) => s.key);
-  const resolve = (text: string) =>
-    text.replace(/\{\{\s*\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (_, key: string) => {
-      if (!secretKeys.includes(key)) throw new Error(`placeholder {{.${key}}} names a secret the request did not list`);
-      const v = values[key];
-      if (v === undefined) throw new Error(`no value for secret ${key}`);
-      return v;
-    });
-  const resolved: SentRequest = {
-    url: r.url,
-    method: r.method,
-    headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, resolve(v)])),
-    body: body === undefined ? undefined : resolve(body),
-    cached: false,
-  };
-  return { built, secretKeys, resolved };
-}
 
 /**
  * Answer one Confidential HTTP request from the fixtures. Etherscan's key

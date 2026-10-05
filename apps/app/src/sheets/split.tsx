@@ -66,8 +66,8 @@ import { n, when } from "@/lib/view";
  * The amounts and who paid come from the chain (PolarisSplit, through the
  * API). The words come from the link's fragment, or from this device if it
  * made or opened the link before, and are shown only when they hash to what
- * the organiser signed. A share wears its name's initials, never one of the
- * sample people's photos: the name is whatever the organiser typed.
+ * the organiser signed. A share wears its name's initials, never a stock
+ * photo: the name is whatever the organiser typed.
  */
 
 const subscribeHash = (onChange: () => void) => {
@@ -95,7 +95,6 @@ function useSplitWords(split: SplitStatus | undefined, id: Hex): Words {
     () => "",
   );
   if (!split) return { memo: null, mismatch: false };
-  if (split.sampleMemo) return { memo: split.sampleMemo, mismatch: false };
   const fromLink = parseSplitFragment(hash);
   if (memoMatches(fromLink, split.memoHash)) return { memo: fromLink, mismatch: false };
   const known = knownSplit(id)?.memo ?? null;
@@ -131,7 +130,7 @@ export function SplitSheet({ id }: { id: Hex }) {
   const s = split.value;
   const origin = useOrigin();
   useEffect(() => {
-    if (!s || !words.memo || s.sampleMemo || !origin || organiser) return;
+    if (!s || !words.memo || !origin || organiser) return;
     if (knownSplit(id)) return;
     rememberSplit(id, { memo: words.memo, url: splitUrl(origin, id, words.memo), role: "friend", at: Date.now() });
   }, [s, words.memo, origin, organiser, id]);

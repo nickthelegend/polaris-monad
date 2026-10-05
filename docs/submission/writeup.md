@@ -102,9 +102,10 @@ on a phone it needs the app on an HTTPS domain inside its passkey domain,
 which is not hosted yet: the steps and a deploy check are ready
 ([`docs/deploy.md`](../deploy.md)), the deploy itself is a team step
 ([README, "What only you can do"](../../README.md#what-only-you-can-do), step 6).
-The underwriting evidence there is the underwriting package's synthesized
-fixtures, so the line is labelled "CRE workflow, local run", never "Verified
-by Chainlink CRE" ([`provenance.ts`](../../apps/business/src/server/cre/provenance.ts)).
+A line opened there is labelled "CRE workflow, local run", never "Verified
+by Chainlink CRE" ([`provenance.ts`](../../apps/business/src/server/cre/provenance.ts)),
+and its evidence comes from the live providers or not at all: a provider
+without its key is reported as not configured, never answered from fixtures.
 We have not timed link-to-paid; the video puts a clock on screen.
 
 ## 4. How it works
@@ -594,12 +595,15 @@ checkout ([capture](../demo/20-payin4-6-limit-raised.png)), the credit screen
 and the dashboard's "Why your buyers got credit"
 ([capture](../demo/41-dashboard-panels.png)). Every reason Nansen backs
 carries `provider: "nansen"`. `pnpm --filter @polarispay/underwriting test`:
-263 passing.
+285 passing.
 
 **Not done yet, and why:** **no live Nansen call yet.** We had no Nansen API
 key while building, so every run read synthesized fixtures in Nansen's
 documented response shapes, each labelled as such
 ([`fixtures/README.md`](../../packages/underwriting/fixtures/README.md)).
+Those fixtures are now test doubles only: without `NANSEN_API_KEY` the
+product reports Nansen as not configured, and a linked wallet whose risk
+checks need it is not underwritten.
 With a key, `pnpm --filter @polarispay/underwriting record --linked <wallet>`
 records real responses. Nansen covers Monad mainnet only, so it scores the
 buyer's linked history wallet; a new testnet account goes through Zerion
@@ -712,8 +716,11 @@ In one place ([README, "What is simulated or sample"](../../README.md#what-is-si
 - **The Android app** is a signed APK built from the repository; it has not
   been installed on a real phone yet.
 - **Face ID** is the dev signer in the demo; the badge says so.
-- **Underwriting evidence** is synthesized fixtures, labelled; no live Nansen,
-  Zerion or Etherscan call has been made.
+- **Underwriting evidence** is live or absent: a provider without its key
+  (`NANSEN_API_KEY`, `ZERION_API_KEY`, `ETHERSCAN_API_KEY`) is reported as not
+  configured and what only it reads counts for nothing; the synthesized
+  fixtures serve the tests only. No live Nansen, Zerion or Etherscan call has
+  been made yet.
 - **Chainlink's AUSD/USD and FX rates are real**, read from Chainlink's feeds;
   nothing writes to mainnet. The demo's guardian pause is the owner raising
   the threshold above the real price, captioned "threshold raised for demo";

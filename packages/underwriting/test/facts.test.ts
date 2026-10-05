@@ -196,6 +196,90 @@ describe("deriveFacts v1", () => {
   });
 });
 
+describe("deriveFacts: evidence a provider without its key could not read", () => {
+  it("an unread positive fact is absent: no points, listed, and it does not hold the report back", () => {
+    const d = deriveFacts({
+      account: seasoned(),
+      linked: linked({ stableBalance: evidence.notConfigured(0, "zerion.positions", "zerion and nansen not configured") }),
+      observedAt: NOW,
+    });
+    assert.deepEqual(d.absent, ["linked.stableBalance"]);
+    assert.deepEqual(d.missing, []);
+    assert.equal(d.final, true);
+    assert.equal(d.linked?.used, true);
+    assert.equal(d.facts.stableBalance, 37_600_000n, "only the account's own dollars: the linked wallet's are absent, not zero-read");
+  });
+
+  it("an unread risk check leaves the linked wallet out and is not final: underwriting runs once, so it waits for the key", () => {
+    const nc = <T>(v: T) => evidence.notConfigured(v, "nansen.first-funder", "nansen not configured");
+    const d = deriveFacts({
+      account: seasoned(),
+      linked: linked({ funder: nc<Funder | null>(null), relatedWallets: nc(0), riskLabel: nc<string | null>(null) }),
+      observedAt: NOW,
+    });
+    assert.equal(d.final, false);
+    assert.deepEqual(d.missing.sort(), ["linked.funder", "linked.relatedWallets", "linked.riskLabel"]);
+    assert.deepEqual(d.absent.sort(), ["linked.funder", "linked.relatedWallets", "linked.riskLabel"]);
+    assert.equal(d.linked?.excludedFor, "missing-risk-check");
+    assert.equal(d.facts.exchangeFunded, false);
+
+    const out = underwrite({ user: ACCOUNT, observedAt: NOW, account: seasoned(), linked: linked({ funder: nc<Funder | null>(null), relatedWallets: nc(0), riskLabel: nc<string | null>(null) }), linkVerified: true });
+    assert.equal(out.unavailable, true);
+    assert.equal(out.report, null);
+    assert.match(out.decision.headline, /Credit reviews aren't fully set up here yet\.$/);
+    assert.equal(out.decision.nextSteps.some((s) => s.id === "retry"), false, "waiting won't help");
+  });
+
+  it("a risk check no configured provider can run decides it, whatever else failed: retrying can't finish it", () => {
+    const out = underwrite({
+      user: ACCOUNT,
+      observedAt: NOW,
+      account: seasoned(),
+      linked: linked({ liquidations: evidence.missing(0, "etherscan.logs", "etherscan unavailable"), riskLabel: evidence.notConfigured<string | null>(null, "nansen.labels", "nansen not configured") }),
+      linkVerified: true,
+    });
+    assert.equal(out.final, false);
+    assert.equal(out.unavailable, true);
+    assert.equal(out.decision.nextSteps.some((s) => s.id === "retry"), false);
+  });
+
+  it("a real failure with nothing unconfigured still asks to retry", () => {
+    const out = underwrite({
+      user: ACCOUNT,
+      observedAt: NOW,
+      account: seasoned(),
+      linked: linked({ liquidations: evidence.missing(0, "etherscan.logs", "etherscan unavailable") }),
+      linkVerified: true,
+    });
+    assert.equal(out.final, false);
+    assert.equal(out.unavailable, false);
+    assert.ok(out.decision.nextSteps.some((s) => s.id === "retry"));
+  });
+
+  it("a thin file whose history was unread is not called thin: no promise about when Pay in 4 opens", () => {
+    const out = underwrite({
+      user: ACCOUNT,
+      observedAt: NOW,
+      account: account({
+        firstSeenAt: evidence.notConfigured<number | null>(null, "etherscan.tokentx", "zerion and etherscan not configured"),
+        sentCount: evidence.notConfigured(0, "etherscan.tokentx", "zerion and etherscan not configured"),
+      }),
+    });
+    assert.equal(out.final, true);
+    assert.equal(out.attest, false);
+    assert.equal(out.unavailable, true);
+    assert.equal(out.decision.headline, "Credit reviews aren't fully set up here yet.");
+    assert.equal(out.decision.nextSteps.some((s) => s.id === "build-history"), false);
+  });
+
+  it("a thin file with every source read stays a thin file", () => {
+    const out = underwrite({ user: ACCOUNT, observedAt: NOW, account: account() });
+    assert.equal(out.unavailable, false);
+    assert.deepEqual(out.absent, []);
+    assert.equal(out.decision.headline, "Pay in 4 opens once there's a little more history here.");
+  });
+});
+
 describe("underwrite: what may be reported", () => {
   it("never reports a linked wallet whose ownership was not proven, not even with allowPartial", () => {
     const out = underwrite({ user: ACCOUNT, observedAt: NOW, account: account(), linked: linked(), options: { allowPartial: true } });

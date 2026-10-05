@@ -13,6 +13,9 @@ export const evidence = {
     detail ? { value, status: "empty", source, detail } : { value, status: "empty", source },
   missing: <T>(value: T, source: string, detail?: string): Evidence<T> =>
     detail ? { value, status: "missing", source, detail } : { value, status: "missing", source },
+  /** No provider that reads this could be asked: none of them has a key here. */
+  notConfigured: <T>(value: T, source: string, detail?: string): Evidence<T> =>
+    detail ? { value, status: "not_configured", source, detail } : { value, status: "not_configured", source },
 };
 
 /**

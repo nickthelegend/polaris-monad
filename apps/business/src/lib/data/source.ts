@@ -32,9 +32,7 @@ export type PayoutRun = { result: "paid" | "skipped" | "failed"; detail?: string
  * Everything the dashboard reads or writes, as one interface.
  *
  * Pages depend on this and nothing else. It is implemented over our own
- * authenticated API routes (`http.ts`); the sample implementation
- * (`sample.ts`) serves the labelled "Preview with sample data" view and the
- * development-only mock session.
+ * authenticated API routes (`http.ts`).
  */
 export interface DashboardData {
   /** What this server is connected to (chain, relayer, payout signer). */
@@ -51,8 +49,8 @@ export interface DashboardData {
 
   /**
    * The Chainlink page: the CRE workflows, their latest reports on Monad and
-   * the credit guard. On a server with nothing deployed, labelled sample data
-   * (`sample: true`).
+   * the credit guard. On a server with nothing deployed, `deployed: false`
+   * and no workflows.
    */
   getChainlink(): Promise<ChainlinkOverview>;
   /** The credit guard now: whether new Pay in 4 plans are paused, and why. */

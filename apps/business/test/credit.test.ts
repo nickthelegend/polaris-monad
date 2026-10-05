@@ -9,7 +9,7 @@ import { GET as messagesGet } from "@/app/api/public/credit/[account]/messages/r
 import { signCreCallback, verifyCreSignature } from "@/server/credit/callback-signature";
 import { linkMessage, underwriteConsentMessage } from "@/server/credit/messages";
 import { configureExplainForTests, reportFromForwarderCall } from "@/server/credit/explain";
-import { configureUnderwritingForTests, runUnderwritingQueue } from "@/server/credit/underwriting";
+import { configureUnderwritingForTests, runUnderwritingQueue, unavailableMessage } from "@/server/credit/underwriting";
 import { getDb } from "@/server/db";
 
 import { json, params, request, setupServer, type TestEnv } from "./helpers/env";
@@ -208,6 +208,32 @@ describe("POST /api/cre/callback", () => {
     const account = privateKeyToAccount(generatePrivateKey()).address;
     await post({ id: `thin:${account.toLowerCase()}:abcdefgh`, type: "credit.thin", user: account, score: null, reason: "no history yet", txHash: null });
     expect((await status(account)).decision).toMatchObject({ status: "thin", reason: "no history yet", txHash: null });
+  });
+
+  it("a review that needs a provider with no key fails the request with the provider and its key, and decides nothing", async () => {
+    const { account, body } = await signedRequest({ withHistory: true });
+    await underwrite(body);
+    await runUnderwritingQueue();
+    const res = await post({
+      id: `unavailable:${account.address.toLowerCase()}:abcdefgh`,
+      type: "credit.unavailable",
+      user: account.address,
+      score: null,
+      reason: "not configured: nansen (NANSEN_API_KEY); absent: linked.funder",
+      txHash: null,
+      notConfigured: [{ provider: "nansen", env: "NANSEN_API_KEY" }],
+    });
+    expect(res.status).toBe(200);
+    const s = await status(account.address);
+    expect(s.decision).toBeNull();
+    expect(s.request).toMatchObject({
+      state: "failed",
+      error: "This review needs Nansen, which isn't set up on this server yet (NANSEN_API_KEY). Pay now still works.",
+    });
+    expect(unavailableMessage(["zerion", "etherscan", "nansen", "bogus"])).toBe(
+      "This review needs Zerion, Etherscan and Nansen, which aren't set up on this server yet (ZERION_API_KEY, ETHERSCAN_API_KEY and NANSEN_API_KEY). Pay now still works.",
+    );
+    expect(unavailableMessage([])).toBe("Credit reviews aren't fully set up on this server yet. Pay now still works.");
   });
 
   it("refuses a wrong secret, a stale timestamp and a missing header", async () => {

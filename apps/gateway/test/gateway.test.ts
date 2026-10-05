@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
 import { baseLimit, decisionFor, explain, formatUnits, scoreFrom } from "../src/score.ts";
 import { startGateway } from "../src/server.ts";
@@ -39,12 +41,38 @@ describe("score explanations", () => {
   });
 });
 
+/** A JSON-RPC stand-in for Monad testnet on loopback (a test double): every balanceOf is $455. */
+async function rpcStub(): Promise<{ url: string; server: Server; calls: string[] }> {
+  const calls: string[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      const call = JSON.parse(raw) as { id?: number; method: string };
+      calls.push(call.method);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: call.id ?? 1, result: `0x${(227_500_000).toString(16)}` }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server, calls };
+}
+
+const close = (server: Server) => new Promise<void>((resolve) => server.close(() => resolve()));
+
 describe("the gateway", () => {
-  it("serves /health and underwriting from fixtures when no key is set", async () => {
-    const { server, url } = await startGateway({ PORT: "0", UNDERWRITING_MODE: "fixture" });
+  it("without provider keys: each is not_configured in /health and in the answer, never called, and nothing stands in", async () => {
+    const rpc = await rpcStub();
+    const { server, url } = await startGateway({ PORT: "0", MONAD_TESTNET_RPC_URL: rpc.url });
     try {
       const health = await (await fetch(`${url}/health`)).json();
-      assert.equal(health.modes.nansen, "fixture");
+      assert.deepEqual(health.modes, { nansen: "not_configured", zerion: "not_configured", etherscan: "not_configured", rpc: "live" });
+      assert.deepEqual(
+        health.notConfigured.map((n: { env: string }) => n.env),
+        ["NANSEN_API_KEY", "ZERION_API_KEY", "ETHERSCAN_API_KEY"],
+      );
+      assert.doesNotMatch(JSON.stringify(health), /fixture/);
+
       const res = await fetch(`${url}/v1/underwrite`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -52,36 +80,40 @@ describe("the gateway", () => {
       });
       const body = await res.json();
       assert.equal(res.status, 200);
-      assert.equal(body.dataMode, "fixture");
-      assert.equal(body.decision.limit, "200000000");
-      assert.equal(body.attest, true);
-
-      // A three-day-old account is below the evidence floor: final, but nothing to report and no line.
-      const thin = await (
-        await fetch(`${url}/v1/underwrite`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ account: "0xacc0000000000000000000000000000000000001" }),
-        })
-      ).json();
-      assert.equal(thin.final, true);
-      assert.equal(thin.attest, false);
-      assert.equal(thin.report, null);
-      assert.equal(thin.decision.limit, "0");
+      assert.deepEqual(body.providers, health.modes);
+      assert.deepEqual(body.notConfigured, [
+        { provider: "zerion", env: "ZERION_API_KEY" },
+        { provider: "etherscan", env: "ETHERSCAN_API_KEY" },
+      ]);
+      assert.deepEqual(body.absent.sort(), ["account.firstSeenAt", "account.sentCount"]);
+      assert.equal(body.facts.stableBalance, "455000000", "the public RPC is live: two balances of $227.50");
+      assert.equal(body.facts.txCount, 0, "absent, not counted");
+      assert.equal(body.final, true);
+      assert.equal(body.attest, false);
+      assert.equal(body.report, null);
+      assert.equal(body.unavailable, true);
+      assert.equal(body.decision.headline, "Credit reviews aren't fully set up here yet.");
+      assert.ok(rpc.calls.every((m) => m === "eth_call"));
+      assert.doesNotMatch(JSON.stringify(body), /fixture/);
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await close(server);
+      await close(rpc.server);
     }
+  });
+
+  it("refuses UNDERWRITING_MODE=fixture rather than start on synthesized data", async () => {
+    await assert.rejects(startGateway({ PORT: "0", UNDERWRITING_MODE: "fixture" }), /UNDERWRITING_MODE=fixture is not supported/);
   });
 
   it("refuses to start on a host that is not loopback without a token, instead of serving an open API", async () => {
     for (const HOST of ["0.0.0.0", "::", "192.168.1.20", "8.8.8.8"]) {
-      await assert.rejects(startGateway({ PORT: "0", HOST, UNDERWRITING_MODE: "fixture" }), /refusing to serve .* without a token/, HOST);
-      await assert.rejects(startGateway({ PORT: "0", HOST, UNDERWRITING_MODE: "fixture", UNDERWRITING_API_TOKEN: "   " }), /without a token/, `${HOST} with a blank token`);
+      await assert.rejects(startGateway({ PORT: "0", HOST }), /refusing to serve .* without a token/, HOST);
+      await assert.rejects(startGateway({ PORT: "0", HOST, UNDERWRITING_API_TOKEN: "   " }), /without a token/, `${HOST} with a blank token`);
     }
   });
 
   it("an empty HOST means loopback, not every interface", async () => {
-    const { server, url } = await startGateway({ PORT: "0", HOST: "", UNDERWRITING_MODE: "fixture" });
+    const { server, url } = await startGateway({ PORT: "0", HOST: "" });
     try {
       assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
       const addr = server.address();
@@ -92,7 +124,7 @@ describe("the gateway", () => {
   });
 
   it("with a token, /v1/* answers only to it", async () => {
-    const { server, url } = await startGateway({ PORT: "0", UNDERWRITING_MODE: "fixture", UNDERWRITING_API_TOKEN: "s3cret-token-for-tests" });
+    const { server, url } = await startGateway({ PORT: "0", UNDERWRITING_API_TOKEN: "s3cret-token-for-tests" });
     try {
       const call = (auth?: string) =>
         fetch(`${url}/v1/explain`, {

@@ -38,12 +38,13 @@ function summary(order: Order) {
  */
 export async function POST(req: Request) {
   const origin = requestOrigin(req);
-  const config = polarisConfig(origin);
+  const config = polarisConfig();
   if (!config.ok) {
+    // No Polaris settings, no payment: nothing is created and nothing pretends to succeed.
     return error(
       503,
-      "payments_unavailable",
-      "Payments are switched off on this store right now.",
+      "payments_not_configured",
+      "Payments aren't configured on this store.",
       process.env.NODE_ENV === "development" ? { detail: config.reason } : {},
     );
   }
@@ -92,11 +93,8 @@ export async function POST(req: Request) {
   if (order.payment.sessionId) order = (await nextSessionAttempt(order.id)) ?? order;
   try {
     const { session, log } = await createCheckoutSession(order, origin);
-    // The dev mock lives on a fixed local origin; its test checkout page is
-    // this same app, so the browser opens it on the origin it's already on.
-    const url = config.target === "dev-mock" ? new URL(new URL(session.url).pathname, origin).href : session.url;
-    await attachSession(order.id, { ...session, url }, log);
-    return Response.json({ order: summary(order), reused: created.reused, checkout: { sessionId: session.id, url } }, init);
+    await attachSession(order.id, session, log);
+    return Response.json({ order: summary(order), reused: created.reused, checkout: { sessionId: session.id, url: session.url } }, init);
   } catch (e) {
     const log = (e as { sdkLog?: SdkCall }).sdkLog;
     if (log) await appendSdkLog(order.id, [log]);

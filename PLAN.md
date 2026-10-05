@@ -34,7 +34,7 @@ send / split → receipt), (2) every sponsor requirement met with real calls,
 |---|---|---|---|
 | P1 ★ | **Zero-mock product path**: remove offline demo data, the dev mock session, the shop's dev mock API, fixture evidence and the mock dollar from what runs | — | IN PROGRESS |
 | P2 ★ | **Real local stack**: `demo:local` on an anvil fork of Monad testnet with Agora's real AUSD, Chainlink's forwarder, real WebAuthn (virtual authenticator with PRF in automation) | P1 | NOT STARTED |
-| P3 | **Indexer live**: Envio HyperIndex on the local chain feeding the dashboard, webhooks and CRE candidates | P2 for the fork variant | IN PROGRESS |
+| P3 | **Indexer live**: Envio HyperIndex on the local chain feeding the dashboard, webhooks and CRE candidates | P2 for the fork variant | DONE (local) |
 | P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | NOT STARTED |
 | P5 | **Quality loop**: tests, typecheck, lint, contracts, Slither, secret scan, 375 px, a11y basics, failure states; gap grep re-run | P4 | IN PROGRESS (first pass green) |
 | P6 | **Judge package**: README, SUBMISSION.md, DEPLOY-LATER.md, kit | — | DONE (refresh at the end) |
@@ -52,26 +52,52 @@ Each task: objective · acceptance · verify · status.
   `NEXT_PUBLIC_POLARIS_API_URL` the app shows an honest "not configured"
   screen. · Acceptance: no import of mock data outside tests; a build without
   the API shows the not-configured state; app tests green. · Verify: grep,
-  `pnpm --filter @polaris/app test typecheck lint`, browser. · NOT STARTED
-  (waits for the UI polish session's `apps/app` branch).
+  `pnpm --filter @polaris/app test typecheck lint`, browser. · DONE (6 Oct):
+  the offline demo, stub relayer, placeholder domains and "Sample" pills are
+  gone; without the API every route shows "Polaris isn't configured on this
+  build" and nothing can be signed; `/gallery` is development only; 65 tests
+  (incl. `test/zero-mock.test.ts`). Follow-up P1.7.
+- **P1.7 Boost and account digits.** `components/accounts.tsx` had invented
+  card digits ("0095", "1122") and a Boost balance fixed at 0: read the
+  buyer's real collateral from `CollateralVault`, derive the digits. · DONE
+  (6 Oct): Boost reads `lockedOf` (hidden without a vault); every face shows
+  the account's own digits; 69 app tests
+- **P1.8 Add to Boost / take out.** The app could not lock collateral,
+  though the relayer supports `lockCollateral`; without Nansen/Zerion keys
+  it is the real way to raise a limit. · IN PROGRESS
 - **P1.2 Business without the dev mock session.** Remove
   `POLARIS_DEV_MOCK_SESSION`, `components/auth/mock-auth.tsx`,
   `lib/data/sample.ts`, `chainlink-sample.ts` and the `placeholder` branches
   in `lib/data/insights.ts`; empty states where data is absent. · Acceptance:
   no sample or placeholder data reachable in any build; business tests
-  green. · IN PROGRESS
+  green. · DONE (6 Oct): the mock session, the sample book (also the
+  server's sample book for chainless merchants and the "Preview with sample
+  data" toggle) and the placeholder panels are gone; honest empty states
+  ("No collections run yet", "Indexer not configured", "This server isn't
+  connected to Monad yet"); `/gallery` is development only; 279 tests
 - **P1.3 Shop without the dev mock API.** Remove `apps/shop/src/lib/dev-polaris`,
   the `route.dev.ts`/`page.dev.tsx` routes, `HALCYON_DEV_MOCK`, the dev
   drawer; without Polaris keys the shop says payments are not configured. ·
-  Acceptance: shop pays only through Polaris for Business; tests green. · IN
-  PROGRESS
+  Acceptance: shop pays only through Polaris for Business; tests green. ·
+  DONE (6 Oct): the mock API, its routes and `HALCYON_DEV_MOCK` are gone;
+  unconfigured → "Payments aren't configured" (checkout page, 503 from
+  `/api/checkout`, `/api/health` says why); the build fails if it serves any
+  API route beyond the shop's five (`apps/shop/scripts/assert-api-routes.mjs`);
+  96 tests. The "Built with Polaris" drawer stays: it shows the real SDK
+  calls and webhooks
 - **P1.4 Underwriting without fixture evidence in the product.** Missing
   `NANSEN_API_KEY`/`ZERION_API_KEY` → the provider is "not configured", never
   synthesized data; "Raise your limit" says reviews need the named key;
   fixtures stay for unit tests only. Live Etherscan (key present) and public
   RPCs still count. · Acceptance: `packages/underwriting/src/node/client.ts`
   no longer defaults to fixtures; gateway `dataMode` never "fixture" at
-  runtime. · IN PROGRESS
+  runtime. · DONE (6 Oct): two modes only, live or `not_configured`
+  (naming the variable); `UNDERWRITING_MODE=fixture` gone (the gateway
+  refuses it); fixtures only via `@polarispay/underwriting/testing`, and
+  `no-fixtures-in-product.test.ts` fails if product code reaches them; a
+  review a key could finish is `unavailable`, never a line from absent
+  evidence; "Raise your limit" names the missing key. Live provider calls are
+  UNTESTED until the keys exist (Etherscan's is set)
 - **P1.5 Real dollar locally.** The local stack uses Agora's AUSD on a fork
   (see P2.1); MockAUSD stays for unit tests and `AUSD_MODE=mock` only. ·
   NOT STARTED
@@ -98,7 +124,16 @@ Each task: objective · acceptance · verify · status.
 ### P3 Indexer
 
 - **P3.1 Envio on the local chain** (RPC source, no token): entities,
-  Activity outbox, DueCandidates, consumers read it. · IN PROGRESS (agent)
+  Activity outbox, DueCandidates, consumers read it. · DONE (6 Oct,
+  `pnpm indexer:local`): synced to head, all 26 entities populated, 27/27
+  values equal the contracts, all nine webhook kinds in the outbox,
+  DueCandidates listed a due loan and subscription; the dashboard path
+  (`insights.live.test.ts`), the SDK's webhook validator and a real
+  `polaris-collections` run read it. Left: the API's own webhook dispatcher
+  still sends from its chain sync, not the indexer outbox (P3.3)
+- **P3.3 Dispatcher from the indexer** (optional): when
+  `POLARIS_INDEXER_URL` is set, read the `Activity` outbox by cursor. ·
+  NOT STARTED (P3)
 - **P3.2 Envio on testnet** needs `ENVIO_API_TOKEN` and the testnet go. ·
   BLOCKED
 
@@ -145,7 +180,7 @@ evidence: 730 lines. The product-path gaps:
 | G14 | `workflows` CRE report gas estimate undershoots on the fork | A report can land "not processed" | P2 | Measure on testnet (read-only) | P7 |
 
 The other hits are tooling and tests: deploy and e2e scripts, the contracts'
-own `Mock*.sol` for unit tests, `assert-no-dev-mock.mjs` (a guard),
+own `Mock*.sol` for unit tests, `assert-api-routes.mjs` (a build guard),
 `provenance.ts` (names Chainlink's MockKeystoneForwarder for what it is).
 
 ## 5. Completion

@@ -74,7 +74,7 @@ function ProfilePhone() {
           <p className="truncate text-[22px] leading-tight font-medium tracking-[-0.02em]">{name || "Your account"}</p>
           <p className="mt-1 truncate text-[14px] text-ui-muted">
             {state.status === "none"
-              ? "A sample account. Create yours in a second."
+              ? "No account on this device yet. Create yours in a second."
               : source === "privy" && privy.email
                 ? privy.email
                 : profile.value

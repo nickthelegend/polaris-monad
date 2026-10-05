@@ -527,14 +527,68 @@ describe("what the chain would refuse is refused before any provider call", () =
   });
 });
 
-test("without Nansen the history wallet's risk checks cannot run: no report, the app retries", async () => {
-  const seen = wire();
-  const noNansen = new Map([["main", new Map([["ZERION_API_KEY", "z"], ["ETHERSCAN_API_KEY", "e"]])]]);
-  const out = runWith(config(), await asks(await proof(buyer)), noNansen);
-  expect(out.status).toBe("incomplete");
-  expect(out.missing.some((m: string) => m.startsWith("linked."))).toBe(true);
-  expect(seen.reports).toHaveLength(0);
-  expect(seen.sent.some((s) => s.url.startsWith("https://api.nansen.ai"))).toBe(false);
+describe("a provider without its key is not configured, never stood in for", () => {
+  const noNansen = () => new Map([["main", new Map([["ZERION_API_KEY", "z"], ["ETHERSCAN_API_KEY", "e"]])]]);
+
+  test("without Nansen the history wallet's risk checks cannot run: no report, and the run says Nansen isn't configured", async () => {
+    const seen = wire();
+    const out = runWith(config(), await asks(await proof(buyer)), noNansen());
+    expect(out.status).toBe("unavailable");
+    expect(out.notConfigured).toEqual(["nansen"]);
+    expect(out.reason).toContain("nansen (NANSEN_API_KEY)");
+    expect(out.absent).toEqual(expect.arrayContaining(["linked.funder", "linked.relatedWallets", "linked.riskLabel"]));
+    expect(out.missing.some((m: string) => m.startsWith("linked."))).toBe(true);
+    expect(seen.reports).toHaveLength(0);
+    expect(seen.sent.some((s) => s.url.startsWith("https://api.nansen.ai"))).toBe(false);
+  });
+
+  test("the API hears it, signed, with the providers and the variables they need", async () => {
+    wire();
+    const secrets = new Map([["main", new Map([...noNansen().get("main")!, ["POLARIS_CALLBACK_SECRET", "cb-secret"]])]]);
+    const callbackUrl = "https://api.polaris.test/v1/cre/underwriting";
+    const posted: SentRequest[] = [];
+    const http = HttpActionsMock.testInstance();
+    http.sendRequest = (input) => {
+      const s = toSent(input as unknown as CreRequestLike);
+      if (s.url === callbackUrl) {
+        posted.push(s);
+        return { statusCode: 204 };
+      }
+      return answerFromFixtures(s, FIXTURES);
+    };
+    const asked = await asks(await proof(buyer));
+    const out = runWith(config({ callback: { url: callbackUrl, secretId: "POLARIS_CALLBACK_SECRET" } }), asked, secrets);
+    expect(out.status).toBe("unavailable");
+    expect(posted).toHaveLength(1);
+    expect(verifyCallback("cb-secret", posted[0]!.body!, posted[0]!.headers["polaris-signature"], NOW).ok).toBe(true);
+    expect(JSON.parse(posted[0]!.body!)).toMatchObject({
+      id: `unavailable:${buyer.toLowerCase()}:${asked.consent.nonce}`,
+      type: "credit.unavailable",
+      user: buyer,
+      score: null,
+      txHash: null,
+      notConfigured: [{ provider: "nansen", env: "NANSEN_API_KEY" }],
+    });
+  });
+
+  test("the account alone needs no Nansen: it is underwritten on what the configured providers read", async () => {
+    const seen = wire();
+    const out = runWith(config(), await asks(), noNansen());
+    expect(out.status).toBe("applied");
+    expect(out.notConfigured).toEqual([]);
+    expect(seen.sent.some((s) => s.url.startsWith("https://api.nansen.ai"))).toBe(false);
+  });
+
+  test("with no provider key at all, a thin-looking account is unavailable, never called thin, and nothing is sent to a provider", async () => {
+    const seen = wire();
+    const out = runWith(config(), await asks(), new Map([["main", new Map()]]));
+    expect(out.status).toBe("unavailable");
+    expect(out.notConfigured).toEqual(["zerion", "etherscan"]);
+    expect(out.absent).toEqual(expect.arrayContaining(["account.firstSeenAt", "account.sentCount"]));
+    expect(seen.reports).toHaveLength(0);
+    expect(seen.sent.filter((s) => /api\.(nansen\.ai|zerion\.io|etherscan\.io)/.test(s.url))).toHaveLength(0);
+    expect(out.httpCalls).toBe(0);
+  });
 });
 
 test("a refusal on chain is reported with ScoreManager's reason", async () => {
@@ -667,7 +721,8 @@ describe("Confidential HTTP (confidentialHttp: true, as staging simulates)", () 
     const seen = wire();
     const cfg = config({ confidentialHttp: true, secrets: { nansen: null, zerion: "ZERION_API_KEY", zerionBasicAuth: "ZERION_BASIC_AUTH", etherscan: "ETHERSCAN_API_KEY" } });
     const out = runWith(cfg, await asks(await proof(buyer)), NO_PROVIDER_KEYS);
-    expect(out.status).toBe("incomplete");
+    expect(out.status).toBe("unavailable");
+    expect(out.notConfigured).toEqual(["nansen"]);
     expect(seen.confidential.some((c) => c.built.url.startsWith("https://api.nansen.ai"))).toBe(false);
     expect(seen.reports).toHaveLength(0);
   });

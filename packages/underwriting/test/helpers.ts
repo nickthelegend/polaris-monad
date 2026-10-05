@@ -1,13 +1,14 @@
 /**
- * Shared test setup: fixture-backed providers with instant retries, and
- * transports that fail on cue.
+ * Shared test setup: providers answered by the fixture test double (with test
+ * keys, so they run as live clients would), instant retries, and transports
+ * that fail on cue.
  */
 
 import { HISTORY_CHAINS, MONAD_TESTNET } from "../src/core/constants.ts";
-import type { Address } from "../src/core/types.ts";
+import type { Address, KeyedProvider } from "../src/core/types.ts";
 import type { Providers } from "../src/node/collect.ts";
 import { EtherscanClient } from "../src/node/etherscan.ts";
-import { fixtureTransport } from "../src/node/fixtures.ts";
+import { fixtureTransport } from "../src/testing/fixtures.ts";
 import type { Clock, HttpRequest, HttpResponse, HttpTransport } from "../src/node/http.ts";
 import { NansenClient } from "../src/node/nansen.ts";
 import { RpcClient } from "../src/node/rpc.ts";
@@ -86,17 +87,28 @@ export const networkDown = (): never => {
   throw new TypeError("fetch failed");
 };
 
-/** Providers on fixtures, with fast retries and an instant clock. */
-export function fixtureProviders(transport?: HttpTransport): Providers & { clock: ReturnType<typeof instantClock>; transport: HttpTransport } {
+/** Test keys: they make the clients live; the fixture transport ignores them. */
+export const TEST_KEYS: Readonly<Record<KeyedProvider, string>> = { nansen: "test-nansen-key", zerion: "test-zerion-key", etherscan: "test-etherscan-key" };
+
+/**
+ * Providers answered by the fixtures, with fast retries and an instant clock.
+ * `notConfigured` leaves those providers without a key, as a deployment
+ * without NANSEN_API_KEY (say) runs them.
+ */
+export function fixtureProviders(
+  transport?: HttpTransport,
+  o: { notConfigured?: KeyedProvider[] } = {},
+): Providers & { clock: ReturnType<typeof instantClock>; transport: HttpTransport } {
   const clock = instantClock();
   const t = transport ?? fixtureTransport();
-  const opts = { mode: "fixture" as const, transport: t, clock, retry: { attempts: 3, baseDelayMs: 10, timeoutMs: 2_000 }, random: () => 0.5, cacheTtlMs: 0 };
+  const opts = { transport: t, clock, retry: { attempts: 3, baseDelayMs: 10, timeoutMs: 2_000 }, random: () => 0.5, cacheTtlMs: 0, minIntervalMs: 0 };
+  const key = (p: KeyedProvider) => (o.notConfigured?.includes(p) ? undefined : TEST_KEYS[p]);
   return {
     clock,
     transport: t,
-    nansen: new NansenClient(opts),
-    zerion: new ZerionClient(opts),
-    etherscan: new EtherscanClient(opts),
+    nansen: new NansenClient({ ...opts, apiKey: key("nansen") }),
+    zerion: new ZerionClient({ ...opts, apiKey: key("zerion") }),
+    etherscan: new EtherscanClient({ ...opts, apiKey: key("etherscan") }),
     accountRpc: new RpcClient(MONAD_TESTNET.rpcUrl, MONAD_TESTNET.chainId, opts),
     historyRpcs: HISTORY_CHAINS.map((c) => new RpcClient(c.rpcUrl, c.chainId, opts)),
   };

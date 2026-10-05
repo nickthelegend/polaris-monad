@@ -1,6 +1,6 @@
 /**
  * The Nansen profiler client. `NANSEN_API_KEY` makes it live; without it, it
- * reads fixtures.
+ * is not configured and every call fails with `not_configured`.
  *
  * Every method throws a ProviderError on failure, with Nansen's own error code
  * where there is one (`insufficient_credits`, `rate_limit_exceeded`, ...), so
@@ -28,7 +28,7 @@ import { jsonBody, ProviderError, type HttpRequest, type HttpResponse } from "./
 export class NansenClient extends ProviderClient {
   constructor(opts: ClientOptions = {}) {
     // Free plan: 15 requests a second.
-    super(opts, { minIntervalMs: 70 });
+    super(opts, { minIntervalMs: 70, provider: "nansen" });
   }
 
   protected authorize(req: HttpRequest): HttpRequest {

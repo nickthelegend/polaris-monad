@@ -122,10 +122,8 @@ function healthyState() {
       ok: true,
       service: "halcyon-shop",
       production: true,
-      devMock: false,
       polaris: {
         configured: true,
-        target: "backend",
         apiBase: URLS.business,
         checkoutOrigin: URLS.app,
         relayUrl: `${URLS.business}/api/v1/relay/payments`,
@@ -135,7 +133,6 @@ function healthyState() {
       shopUrl: URLS.shop,
       orderStore: { kind: "redis", serverless: true },
     },
-    shopMockStatus: 404,
     webhookStatus: 400,
     landingHtml: `<html><title>Polaris</title><a href="${URLS.app}">Get the app</a><a href="${URLS.business}/login">Log in</a></html>`,
     hsts: true,
@@ -188,7 +185,6 @@ function fakeFetch(state) {
     if (key === "shop") {
       if (path === "/") return new Response("<html>Halcyon</html>", { headers: base() });
       if (path === "/api/health") return json(state.shop);
-      if (path.startsWith("/api/dev-polaris")) return new Response("not found", { status: state.shopMockStatus });
       if (path === "/api/webhooks/polaris") return json({ error: "invalid signature" }, state.webhookStatus);
       return new Response("not found", { status: 404 });
     }
@@ -252,11 +248,13 @@ describe("the app", () => {
     assert.equal(status("app", "rp-id"), WARN);
   });
 
-  it("fails the offline demo build (no API)", async () => {
-    const { status } = await run((s) => {
+  it("fails a build without the API, which only says Polaris isn't configured", async () => {
+    const { status, find } = await run((s) => {
       s.app.apiUrl = null;
     });
     assert.equal(status("app", "api-url"), FAIL);
+    assert.match(find("app", "api-url")[0].message, /Polaris isn't configured on this build/);
+    assert.doesNotMatch(find("app", "api-url")[0].message, /offline demo/);
   });
 
   it("fails a pinned contract that isn't the deployment's", async () => {
@@ -384,16 +382,16 @@ describe("Polaris for Business", () => {
 });
 
 describe("the shop", () => {
-  it("fails a serverless shop without Redis, a dev mock, a wrong API or checkout", async () => {
+  it("fails a serverless shop without Redis, a development build, a wrong API or checkout", async () => {
     const { status } = await run((s) => {
       s.shop.orderStore = { kind: "file", serverless: true };
-      s.shopMockStatus = 200;
+      s.shop.production = false;
       s.shop.polaris.apiBase = "http://localhost:3100";
       s.shop.polaris.checkoutOrigin = "http://localhost:3000";
       s.shop.shopUrl = null;
     });
     assert.equal(status("shop", "order-store"), FAIL);
-    assert.equal(status("shop", "dev-mock-routes"), FAIL);
+    assert.equal(status("shop", "production"), FAIL);
     assert.equal(status("shop", "polaris"), FAIL);
     assert.equal(status("shop", "checkout-origin"), FAIL);
     assert.equal(status("shop", "shop-url"), FAIL);

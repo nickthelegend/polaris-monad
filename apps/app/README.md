@@ -6,7 +6,8 @@ subscription, and sends dollars anywhere with a link. The plan is in
 [`docs/plan.md`](../../docs/plan.md) (§2, §3.1, §5.3, §5.5, §5.6) and the visual
 design in [`docs/design/system.md`](../../docs/design/system.md): dark, built
 entirely from the shared library [`@polaris/ui`](../../packages/ui) (open
-`/gallery` to see every component beside its reference).
+`/gallery` under `next dev` to see every component beside its reference; a
+production build answers 404 there).
 
 ## Run it
 
@@ -16,6 +17,11 @@ Node 22.6+ and pnpm 10, from the repository root:
 pnpm install
 pnpm --filter @polaris/app dev          # http://localhost:3000
 ```
+
+It needs Polaris for Business (`NEXT_PUBLIC_POLARIS_API_URL`, below): without
+it every route shows "Polaris isn't configured on this build". `pnpm
+demo:local` from the root runs the app against a local Polaris for Business
+and chain.
 
 | Command (with `pnpm --filter @polaris/app`) | What it does |
 |---|---|
@@ -46,9 +52,9 @@ and `POLARIS_ANDROID_*`, which are read per request.
 | `NEXT_PUBLIC_CHAIN_ID` | `10143` | Monad testnet; `143` for mainnet |
 | `NEXT_PUBLIC_RPC_URL` | viem's default for the chain | Read-only RPC (EIP-712 domains, permit nonces) |
 | `NEXT_PUBLIC_EXPLORER_URL` | `https://testnet.monadvision.com` | Where "View receipt" goes |
-| `NEXT_PUBLIC_AUSD_ADDRESS` | AUSD on Monad testnet | The dollar token |
-| `NEXT_PUBLIC_POLARIS_API_URL` | unset | Polaris for Business (e.g. `http://localhost:3100`): the relayer (`POST /api/relay`), checkout sessions and payment links (`/api/public/…`), and the network's contracts and EIP-712 domains (`/api/public/network`). Unset: the stub relayer and sample links. |
-| `NEXT_PUBLIC_PAYMENTS_ADDRESS`, `_CHECKOUT_ADDRESS`, `_SEND_ADDRESS`, `_SPLIT_ADDRESS`, `_LOAN_ENGINE_ADDRESS` | unset | Polaris contracts (`_SPLIT_ADDRESS`: PolarisSplit, split-the-bill links; not on Monad testnet until `deploy-split:monad` runs, and Split a bill says so). With the API set they come from it (and, if set here too, must match it). Without either, unset ones sign against a local placeholder domain, which only the stub relayer accepts. |
+| `NEXT_PUBLIC_AUSD_ADDRESS` | the API's | The dollar token. Unset: the one Polaris for Business's deployment reports; set, it must match it |
+| `NEXT_PUBLIC_POLARIS_API_URL` | **required** | Polaris for Business (e.g. `http://localhost:3100`): the relayer (`POST /api/relay`), checkout sessions and payment links (`/api/public/…`), and the network's contracts and EIP-712 domains (`/api/public/network`). Unset: every route shows "Polaris isn't configured on this build", with no data, and nothing can be signed. |
+| `NEXT_PUBLIC_PAYMENTS_ADDRESS`, `_CHECKOUT_ADDRESS`, `_SEND_ADDRESS`, `_SPLIT_ADDRESS`, `_LOAN_ENGINE_ADDRESS` | unset | Polaris contracts (`_SPLIT_ADDRESS`: PolarisSplit, split-the-bill links; not on Monad testnet until `deploy-split:monad` runs, and Split a bill says so). They come from the API (and, if set here too, must match it, or the app refuses to sign). |
 | `FX_RPC_MONAD`, `FX_RPC_ETHEREUM`, `FX_RPC_POLYGON`, `FX_RPC_BASE` | public RPCs (`packages/fx/src/feeds.ts`) | **Server only.** Comma-separated JSON-RPC URLs `/api/fx` reads the Chainlink FX feeds from (Monad mainnet, Ethereum, Polygon, Base). Read-only calls; no key needed |
 | `POLARIS_ANDROID_SHA256_FINGERPRINTS` | unset | **Server only.** The SHA-256 fingerprints of the certificates the Android app is signed with, comma-separated (`AA:BB:…`, as `pnpm --filter @polaris/android fingerprint` prints). `/.well-known/assetlinks.json` serves them, which verifies the Android app. Unset: that route is 404 and the Android app shows an address bar |
 | `POLARIS_ANDROID_PACKAGE` | `app.polarispay.twa` | **Server only.** The Android app's package name in `/.well-known/assetlinks.json` |
@@ -71,8 +77,12 @@ a local Hardhat node also set `NEXT_PUBLIC_CHAIN_ID=31337` and
 `NEXT_PUBLIC_RPC_URL=http://127.0.0.1:<node port>`: the app refuses to sign
 for a network other than the one it was built for.
 
-With the API set, nothing on screen is sample data (`src/lib/data/live.ts`):
-the balance is `AUSD.balanceOf` read from the chain; plans, subscriptions and
+Everything on screen is the account's own (`src/lib/data/live.ts`):
+the balance is `AUSD.balanceOf` read from the chain; Boost is
+`CollateralVault.lockedOf`, read from the chain at the vault
+`/api/public/network` reports (no vault, no Boost; the app shows what is
+locked and has no way to lock more yet: the relayer's `lockCollateral` is
+not wired to a screen); plans, subscriptions and
 activity come from `/api/public/buyers/{address}` (the API's records of chain
 events); the credit line, score and reasons from `/api/public/credit/{address}`
 (ScoreManager and the CRE workflow's explained decision); a send link's state
@@ -82,9 +92,11 @@ landed). *Raise your limit* signs the account's consent (Face ID)
 and the history wallet's link proof (its own prompt), and the API fires the
 CRE underwriting workflow (`src/lib/underwriting.ts`).
 
-Without it, the app is the offline demo and says so on every screen
-("Demo mode · sample data, nothing is on chain"): the stub relayer's receipts
-are marked `simulated` and never link a made-up hash to the explorer.
+Without it there is no offline demo: every route shows one screen, "Polaris
+isn't configured on this build" (`src/components/not-configured.tsx`, in the
+phone layout and in ref E's frame from 1024px), with no balances, links or
+activity, and nothing can be signed: every EIP-712 domain comes from the API
+(`src/lib/domains.ts`), and there is no other relayer.
 
 ## Accounts
 
@@ -238,7 +250,7 @@ out again even when the browser's Back removed it.
 | `/send` | full sheet | Ref A's transfer: who, from which account, the amount, the keypad; a link (`/claim#k=…`) or straight to a Polaris account |
 | `/receive` | half sheet | Your code and link for getting paid |
 | `/add` | half sheet | Ask, show your code, or claim a link |
-| `/pay` | full sheet | Scan a code, paste a link, or try a sample |
+| `/pay` | full sheet | Scan a code or paste a link |
 | `/pay/[id]` | full sheet | Checkout (ref C): Pay now, Pay in 4 or Subscribe, the limit, Raise your limit |
 | `/claim` | full sheet | Reads the link's fragment, which never reaches a server; claim with one Face ID |
 | `/split/new` | full sheet | Split a bill: the bill on the keypad, then equally between some people (you in or out, names optional) or by named amounts; one Face ID opens it; the link, its QR, Share and Copy. `?amount=…&people=…&name=…` or `&share=Name:amount` fills it in (polarispay-sdk `splits.link()`) |
@@ -251,7 +263,7 @@ out again even when the browser's Back removed it.
 | `/notifications` | half sheet | Payments due, money in, links claimed |
 | `/settings` | half sheet | Name on links, local currency, log out, remove from this device |
 | `/onboard?next=…` | page | Three pages (ref B), then Face ID with *Continue with email* beneath |
-| `/gallery` | page | Every `@polaris/ui` component |
+| `/gallery` | page | Every `@polaris/ui` component (`next dev` only; 404 in a production build) |
 
 Inside those: Confirm with Face ID (compact: it fits its content), the success
 receipt with its check-mark (half), Filters, and Continue with email. A sheet
@@ -290,13 +302,8 @@ merchant web. Below 1024px nothing changes.
 The desktop shell is `src/components/shell/desktop-shell.tsx`; the route
 sheets say how they present with `desktop` on `<RouteSheet>`.
 
-The sample book is marked: while balances, plans and activity come from
-`mock.ts` (`SAMPLE_DATA` in `src/lib/data`), every desktop page figure and
-summary card carries an amber **Sample** pill, and signed out the nav's pill
-reads "Sample account ···· 2451". The sample is a month of an ordinary life
-(about 45 payments, 8 of them in the last day), so the Home chart moves like
-the reference's. The stub relayer's writes are kept in the tab's
-`sessionStorage`, so a reload after paying or sending keeps them.
+With no account on this device, the nav's pill reads "Create your account"
+and pressing it starts one.
 
 ## Local currency
 
@@ -352,7 +359,7 @@ in [`docs/design/chainlink`](../../docs/design/chainlink).
   Chainlink's DON signed (the API's `delivery: "don"`, through Chainlink's
   KeystoneForwarder); a simulated run reads "Chainlink CRE (simulated)" and a
   local one "CRE workflow, local run", in a plain pill instead of the lime
-  shield. The offline demo's sample line shows none.
+  shield. A line no report opened shows none.
 
 `pnpm --filter @polaris/app test` checks the guard and collection states
 (node --test, `test/`).
@@ -366,11 +373,12 @@ in [`docs/design/chainlink`](../../docs/design/chainlink).
 | `src/lib/split.ts` | Split-the-bill links: the words in the link's fragment and their hash (what the organiser signs), equal shares to the micro-dollar, the create form's plan and its prefill, what this device knows (`polaris.splits.v1`) |
 | `src/lib/actions.ts` | Each money action: build, sign, relay |
 | `src/lib/receipts/` | Receipts only you can read: registering the inbox key (`inbox.ts`), reading and opening sealed receipts with the session (`index.ts`), pairing them with Activity rows (`pair.ts`) |
-| `src/lib/relayer.ts` | The relayer client: `POST {NEXT_PUBLIC_POLARIS_API_URL}/api/relay`, errors mapped to `RelayError` with the server's message for the buyer. Without the API, a local stub |
+| `src/lib/relayer.ts` | The relayer client: `POST {NEXT_PUBLIC_POLARIS_API_URL}/api/relay`, errors mapped to `RelayError` with the server's message for the buyer. The only relayer |
 | `src/lib/network.ts`, `src/lib/api.ts` | The network (contracts and EIP-712 domains) from Polaris for Business; the fetch helper |
 | `src/lib/data/remote.ts` | Real checkout links: `cs_…` sessions and `pl_…` payment links, mapped to `PaymentLink` |
 | `src/lib/checkout-return.ts` | The `polaris:checkout` postMessage protocol back to the merchant page (`announceReady`, `finishCheckout`, `cancelCheckout`) |
-| `src/lib/data/` | The data interface every screen reads: `live.ts` (chain and API) with the API set, `mock.ts` (the offline demo's sample data, marked Sample) without |
+| `src/lib/data/` | The data interface every screen reads: `live.ts` (the chain and the API) |
+| `src/components/not-configured.tsx` | The only screen of a build without `NEXT_PUBLIC_POLARIS_API_URL` (the Providers render it on every route) |
 | `src/app/api/fx/route.ts`, `src/lib/fx.ts` | The Chainlink rate behind the local-currency line: the server route (`@polaris/fx`) and the tab's shared, cached fetch |
 | `src/app/.well-known/assetlinks.json/route.ts`, `src/lib/assetlinks.ts` | Digital Asset Links for the Android app (`test/assetlinks.test.ts`) |
 | `src/app/manifest.ts`, `src/app/icons/[name]/route.tsx` | The web app manifest, and its icons from `@polaris/brand` (the Android app's launcher, splash and shortcut icons come from the same URLs) |
@@ -396,7 +404,7 @@ stand-in, so dropping the files in needs no code change:
 ## Not built yet
 
 - Contacts: there is no address book yet, so with the API set the contact
-  list is empty (the demo's sample people have made-up addresses).
+  list is empty.
 - Send-by-link activity: the API doesn't record sends yet (the Envio
   indexer's `send(linkKey)` would); a link's own state is read from the chain.
 - *Raise your limit* connects the history wallet through the browser's own

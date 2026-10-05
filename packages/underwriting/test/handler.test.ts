@@ -18,13 +18,22 @@ const req = (o: Partial<RouteRequest> & { json?: unknown }): RouteRequest => ({
 });
 
 describe("the underwriting API", () => {
-  it("GET /health reports each provider's mode", async () => {
+  it("GET /health reports each provider live or not_configured, never anything else", async () => {
     const res = await createRouter(uw())(req({ method: "GET", url: "/health" }));
     assert.equal(res.status, 200);
     const body = JSON.parse(res.body);
     assert.equal(body.ok, true);
-    assert.deepEqual(body.modes, { nansen: "fixture", zerion: "fixture", etherscan: "fixture", rpc: "fixture" });
+    assert.deepEqual(body.modes, { nansen: "live", zerion: "live", etherscan: "live", rpc: "live" });
+    assert.deepEqual(body.notConfigured, []);
     assert.deepEqual(body.version, { facts: 1, model: 3 });
+
+    const partial = new Underwriter({ providers: fixtureProviders(undefined, { notConfigured: ["nansen", "zerion"] }), now: () => NOW });
+    const h = JSON.parse((await createRouter(partial)(req({ method: "GET", url: "/health" }))).body);
+    assert.deepEqual(h.modes, { nansen: "not_configured", zerion: "not_configured", etherscan: "live", rpc: "live" });
+    assert.deepEqual(h.notConfigured, [
+      { provider: "nansen", env: "NANSEN_API_KEY" },
+      { provider: "zerion", env: "ZERION_API_KEY" },
+    ]);
   });
 
   it("POST /v1/underwrite: the decision, with amounts as base-unit strings", async () => {
@@ -33,7 +42,8 @@ describe("the underwriting API", () => {
     const body = JSON.parse(res.body);
     assert.equal(body.final, true);
     assert.equal(body.attest, true);
-    assert.equal(body.dataMode, "fixture");
+    assert.deepEqual(body.providers, { nansen: "live", zerion: "live", etherscan: "live", rpc: "live" });
+    assert.deepEqual(body.notConfigured, []);
     assert.equal(body.decision.limit, "200000000");
     assert.equal(body.decision.thinFile, null);
     assert.equal(body.decision.payIn4.allowed, true);

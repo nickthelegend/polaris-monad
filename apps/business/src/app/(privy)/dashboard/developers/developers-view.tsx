@@ -25,7 +25,7 @@ import {
 import { Check, CodeXml, KeyRound, MoreHorizontal, Plus, RotateCcw, Send, ShoppingBag, Store, Trash2, TriangleAlert, Webhook } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
-import { LoadError, Panel, SampleBadge, StaleNotice, useNow } from "@/components/dashboard/common";
+import { LoadError, Panel, StaleNotice, useNow } from "@/components/dashboard/common";
 import { RegistrationBadge, registrationOf, useRegisterAction } from "@/components/dashboard/registration";
 import { developers as sdk } from "@/components/landing/content";
 import { DemoShopButton } from "@/components/landing/demo-shop";
@@ -35,7 +35,7 @@ import { formatAgo, formatDate, formatDateTime, formatIn } from "@/lib/data/form
 import { useDemoShopUrl } from "@/lib/demo-shop";
 import { DEMO_SHOP_SOON } from "@/lib/features";
 import { useMerchant } from "@/lib/merchant-context";
-import { useDashboardData, useQuery, useReadiness, useSample, type QueryState } from "@/lib/session";
+import { useDashboardData, useQuery, useReadiness, type QueryState } from "@/lib/session";
 
 /** This dashboard's origin: the `baseUrl` a merchant's server gives createPolarisServer. */
 function useOrigin(): string {
@@ -48,10 +48,6 @@ function useOrigin(): string {
 
 export function DevelopersView() {
   const DEMO_SHOP_URL = useDemoShopUrl();
-  // Keys and webhooks are the merchant's own. They are sample only in the
-  // development mock session or on a server with no chain (its sample book).
-  const { reason } = useSample();
-  const sample = reason === "mock" || reason === "server";
   return (
     <>
       <PageHead
@@ -74,11 +70,11 @@ export function DevelopersView() {
       />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-x-11 gap-y-4 xl:grid-cols-[minmax(0,1fr)_404px]">
         <div className="grid min-w-0 content-start gap-4">
-          <ApiKeysPanel sample={sample} />
-          <WebhooksPanel sample={sample} />
+          <ApiKeysPanel />
+          <WebhooksPanel />
         </div>
         <div className="grid min-w-0 content-start gap-4 md:grid-cols-2 xl:grid-cols-1">
-          <IntegrationPanel sample={sample} />
+          <IntegrationPanel />
           <DemoShopPanel />
         </div>
         <Panel title="A few lines of code" subtitle="The whole integration, with polarispay-sdk 0.3.0" className="xl:col-span-2">
@@ -91,7 +87,7 @@ export function DevelopersView() {
 
 /* ── The integration: who you are to the API ────────────────────────────── */
 
-function IntegrationPanel({ sample }: { sample: boolean }) {
+function IntegrationPanel() {
   const { merchant, capabilities } = useMerchant();
   const origin = useOrigin();
   const blocker = useReadiness().registration;
@@ -100,7 +96,7 @@ function IntegrationPanel({ sample }: { sample: boolean }) {
   const canRegister = !blocker && (state === "none" || state === "failed");
 
   return (
-    <Panel title="Your integration" sample={sample} subtitle="What your server needs, and where your business stands on Monad">
+    <Panel title="Your integration" subtitle="What your server needs, and where your business stands on Monad">
       <div className="mt-5 grid grid-cols-1 gap-3">
         <DetailsList
           size="sm"
@@ -217,7 +213,7 @@ function RevealOnce({ title, secret, children }: { title: string; secret: string
 
 /* ── API keys ───────────────────────────────────────────────────────────── */
 
-function ApiKeysPanel({ sample }: { sample: boolean }) {
+function ApiKeysPanel() {
   const keys = useQuery((d) => d.listApiKeys());
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
@@ -226,7 +222,6 @@ function ApiKeysPanel({ sample }: { sample: boolean }) {
   return (
     <Panel
       title="API keys"
-      sample={sample}
       subtitle="pk_test_… is safe in a browser. sk_test_… stays on your server; we show it once and keep only a hash."
       action={
         <PrimaryButton size="sm" icon={<Plus />} onClick={() => setCreating(true)} className="h-10">
@@ -261,7 +256,6 @@ function ApiKeysPanel({ sample }: { sample: boolean }) {
               <div className="min-w-0">
                 <p className="flex min-w-0 items-center gap-2 text-[15px] font-medium">
                   <span className="truncate">{k.name}</span>
-                  {sample ? <SampleBadge /> : null}
                 </p>
                 <p className="text-[13px] text-ui-muted">Created {formatDate(k.createdAt, true)}</p>
               </div>
@@ -427,7 +421,7 @@ function deliveryResult(d: WebhookDelivery, now: number): { tone: StatusPillTone
   return { tone: "red", text: d.status ? `HTTP ${d.status}` : "No response" };
 }
 
-function WebhooksPanel({ sample }: { sample: boolean }) {
+function WebhooksPanel() {
   const data = useDashboardData();
   const hooks = useQuery((d) => d.listWebhooks(), { refreshMs: 30_000 });
   const [adding, setAdding] = useState(false);
@@ -461,7 +455,6 @@ function WebhooksPanel({ sample }: { sample: boolean }) {
   return (
     <Panel
       title="Webhooks"
-      sample={sample}
       subtitle="Every delivery is signed (Polaris-Signature: t=…, v1=…) with the endpoint's own secret"
       action={
         <PrimaryButton size="sm" icon={<Plus />} onClick={() => setAdding(true)} className="h-10">
@@ -493,7 +486,6 @@ function WebhooksPanel({ sample }: { sample: boolean }) {
               <div className="min-w-0 flex-1">
                 <p className="flex min-w-0 items-center gap-2">
                   <code className="truncate font-mono text-[14px]">{e.url}</code>
-                  {sample ? <SampleBadge /> : null}
                 </p>
                 <p className="mt-1 text-[13px] text-ui-muted">
                   {e.events.length} {e.events.length === 1 ? "event" : "events"} · secret {e.secretHint} · added {formatDate(e.createdAt)}
@@ -550,7 +542,6 @@ function WebhooksPanel({ sample }: { sample: boolean }) {
                             Test
                           </StatusPill>
                         ) : null}
-                        {sample ? <SampleBadge /> : null}
                       </span>
                       <span className="block truncate text-[12px] text-ui-muted">{d.url}</span>
                       <span className="mt-1.5 flex items-center gap-2 sm:hidden">
@@ -584,7 +575,6 @@ function WebhooksPanel({ sample }: { sample: boolean }) {
       />
       <DeliveryDrawer
         delivery={delivery}
-        sample={sample}
         onClose={() => setDelivery(null)}
         onRetried={(d) => {
           upsertDelivery(d);
@@ -750,12 +740,10 @@ function DeleteEndpointDialog({ endpoint, onClose, onDone }: { endpoint: Webhook
 
 function DeliveryDrawer({
   delivery,
-  sample,
   onClose,
   onRetried,
 }: {
   delivery: WebhookDelivery | null;
-  sample: boolean;
   onClose: () => void;
   onRetried: (d: WebhookDelivery) => void;
 }) {
@@ -795,7 +783,6 @@ function DeliveryDrawer({
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill tone={result.tone}>{result.text}</StatusPill>
               {d.test ? <StatusPill tone="neutral">Test event</StatusPill> : null}
-              {sample ? <SampleBadge /> : null}
             </div>
             <DetailsList
               size="sm"

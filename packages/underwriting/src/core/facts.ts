@@ -27,7 +27,20 @@
  *
  * Missing data is never attested as zero (data.md §8). The derivation reports
  * `final: false` and lists what is missing; the CRE workflow must not send a
- * report that is not final. `allowPartial` exists for operators who would
+ * report that is not final.
+ *
+ * Evidence no configured provider could read (`not_configured`: the key is
+ * not set on this deployment) is absent, never invented, and listed in
+ * `absent`:
+ *
+ *   - a positive field (age, activity, dollars, savings and trading) earns no
+ *     points and does not stop the report: asking again cannot change it, and
+ *     leaving it out can only lower the score;
+ *   - a risk field (liquidations, cluster, labels, first funder) is also
+ *     `missing`, so a linked wallet whose risk could not be checked is left out
+ *     and nothing is final. Underwriting runs once per account and binds the
+ *     linked wallet to it (UnderwritingReceiver), so it waits for the key
+ *     rather than spend that once without the history. `allowPartial` exists for operators who would
  * rather underwrite conservatively now than retry: missing positive facts then
  * count as zero and a linked wallet with a missing risk check is left out.
  * Underwriting runs once per account, so partial reports are off by default.
@@ -66,8 +79,13 @@ export interface Derivation {
   facts: Facts;
   /** True when every fact the report depends on was read. Only final facts may be reported. */
   final: boolean;
-  /** `<role>.<field>` for every evidence field that could not be read. */
+  /** `<role>.<field>` for every evidence field that could not be read and may be read on a retry. */
   missing: string[];
+  /**
+   * `<role>.<field>` for every field no configured provider could read: absent,
+   * earning no points. A risk field here is in `missing` too (see above).
+   */
+  absent: string[];
   linked: {
     address: string;
     used: boolean;
@@ -95,10 +113,16 @@ function usable(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+/** Read by no configured provider: absent, never a value. */
+function isAbsent(s: SubjectEvidence, key: EvidenceKey): boolean {
+  return s[key].status === "not_configured";
+}
+
 /** Evidence whose value is not a sane integer counts as missing, never as zero. */
 function isMissing(s: SubjectEvidence, key: EvidenceKey): boolean {
   const ev = s[key];
   if (ev.status === "missing") return true;
+  if (ev.status === "not_configured") return false;
   const v = ev.value;
   switch (key) {
     case "firstSeenAt":
@@ -154,18 +178,24 @@ export function deriveFacts(input: {
   if (linked && linked.address.toLowerCase() === account.address.toLowerCase()) linked = null;
 
   const missing: string[] = [];
+  const absent: string[] = [];
   const collectMissing = (s: SubjectEvidence, keys: readonly EvidenceKey[]) =>
     keys.filter((k) => isMissing(s, k)).map((k) => `${s.role}.${k}`);
+  const collectAbsent = (s: SubjectEvidence, keys: readonly EvidenceKey[]) =>
+    keys.filter((k) => isAbsent(s, k)).map((k) => `${s.role}.${k}`);
 
-  missing.push(...collectMissing(account, [...POSITIVE_FIELDS, ...RISK_FIELDS]));
+  // An unread risk check is never waived by its provider being unconfigured.
+  missing.push(...collectMissing(account, [...POSITIVE_FIELDS, ...RISK_FIELDS]), ...collectAbsent(account, RISK_FIELDS));
+  absent.push(...collectAbsent(account, [...POSITIVE_FIELDS, ...RISK_FIELDS]));
 
   // Admission of the linked wallet.
   let linkedUsed = false;
   let excludedFor: "risk-label" | "missing-risk-check" | null = null;
   let riskLabel: string | null = null;
   if (linked) {
-    const riskMissing = collectMissing(linked, RISK_FIELDS);
+    const riskMissing = [...collectMissing(linked, RISK_FIELDS), ...collectAbsent(linked, RISK_FIELDS)];
     missing.push(...riskMissing, ...collectMissing(linked, POSITIVE_FIELDS));
+    absent.push(...collectAbsent(linked, [...POSITIVE_FIELDS, ...RISK_FIELDS]));
     const label = linked.riskLabel.value;
     if (typeof label === "string" && !isMissing(linked, "riskLabel")) {
       riskLabel = label;
@@ -179,7 +209,7 @@ export function deriveFacts(input: {
 
   const subjects = linkedUsed && linked ? [account, linked] : [account];
   const val = (s: SubjectEvidence, key: EvidenceKey): number | null => {
-    if (isMissing(s, key)) return null;
+    if (isMissing(s, key) || isAbsent(s, key)) return null;
     return s[key].value as number | null;
   };
 
@@ -251,6 +281,7 @@ export function deriveFacts(input: {
     facts,
     final: missing.length === 0 || allowPartial,
     missing,
+    absent,
     linked: linked
       ? { address: linked.address, used: linkedUsed, excludedFor, riskLabel }
       : null,

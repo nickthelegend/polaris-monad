@@ -62,6 +62,12 @@ export type CollectionsOptions = {
   everySeconds: number;
   /** The API's callback URL for the workflow's signed callbacks, or null for none. */
   callbackUrl: string | null;
+  /**
+   * The Envio indexer's GraphQL endpoint for the local chain (packages/indexer
+   * `pnpm indexer:local`), so candidates come from `DueCandidates` as on a DON
+   * with `candidates.indexerUrl` set. Absent or null: from the chain.
+   */
+  indexerUrl?: string | null;
 };
 
 export type GuardianOptions = {
@@ -109,7 +115,7 @@ export function transmitterOf(d: Pick<LocalDeployment, "cre" | "deployer">): `0x
   return t && !/^0x0{40}$/i.test(t) ? t : d.deployer;
 }
 
-/** polaris-collections for collections:local: both triggers, candidates from the chain, the runner's pace. */
+/** polaris-collections for collections:local: both triggers, candidates from the chain (or a local indexer), the runner's pace. */
 export function localCollectionsConfig(d: LocalDeployment, templates: Templates, o: CollectionsOptions): CollectionsConfig {
   const out = configsFor("local", d, templates, { callback: o.callbackUrl ?? "" }) as { collections: Record<string, unknown> };
   const candidates = out.collections.candidates as { chainBackoff?: { ladderSeconds: number[]; windowSeconds: number } | null } & Record<string, unknown>;
@@ -117,10 +123,11 @@ export function localCollectionsConfig(d: LocalDeployment, templates: Templates,
     ...out.collections,
     schedule: everyCron(o.everySeconds),
     forwarder: forwarderOf(d),
-    // No indexer locally: the chain proposes the candidates.
+    // The chain proposes the candidates, unless a local indexer is given:
+    // then its DueCandidates does, with the workflow's default query.
     candidates: {
       ...candidates,
-      indexerUrl: null,
+      indexerUrl: o.indexerUrl ?? null,
       indexerQuery: null,
       chainBackoff: candidates.chainBackoff ? { ...candidates.chainBackoff, windowSeconds: rungWindow(o.everySeconds) } : null,
     },

@@ -124,16 +124,13 @@ function Code({ children }: { children: string }) {
 }
 
 export function DevDrawer() {
-  const { currentOrderId, polarisConfig, drawerOpen, menuOpen, buyBar } = useShop();
+  const { currentOrderId, drawerOpen, menuOpen, buyBar } = useShop();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"order" | "code">("order");
   const [order, setOrder] = useState<Order | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   const reduce = useReducedMotion();
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const devMock = polarisConfig.ok && polarisConfig.target === "dev-mock";
   // On a phone the round button would sit on whatever scrolls under it (a product title, the
   // checkout's copy): it steps aside while the page moves and comes back when it stops.
   const [scrolling, setScrolling] = useState(false);
@@ -187,27 +184,6 @@ export function DevDrawer() {
         ...order.events.map((e) => ({ kind: "event" as const, at: e.receivedAt, type: e.type, id: e.id, summary: e.summary, outcome: e.outcome })),
       ].sort((a, b) => a.at.localeCompare(b.at))
     : [];
-
-  const canAdvance =
-    devMock && order?.status === "paid" && ((order.plan && order.plan.status !== "completed") || order.subscription?.status === "active");
-
-  const advance = async () => {
-    if (!order) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      const res = await fetch("/api/dev-polaris/test/advance", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId: order.id }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-      if (!res.ok) setNote(body.error?.message ?? "Couldn't move the plan forward.");
-      await load();
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <>
@@ -288,7 +264,6 @@ export function DevDrawer() {
                     <span className="num">
                       Order {order.number} · <span className={order.status === "paid" ? "text-[#bffa62]" : ""}>{order.status.replace("_", " ")}</span>
                     </span>
-                    {devMock ? <span className="rounded-full bg-amber-300/15 px-2 py-0.5 text-amber-200">dev mock</span> : null}
                   </div>
                   <ol className="mt-3 space-y-2.5">
                     {entries.map((entry, i) => (
@@ -331,22 +306,6 @@ export function DevDrawer() {
                       </li>
                     ))}
                   </ol>
-                  {canAdvance ? (
-                    <div className="mt-4 rounded-xl border border-dashed border-amber-200/25 p-3">
-                      <p className="text-[0.78rem] text-amber-100/80">Dev mock: make Polaris do what it would do next week.</p>
-                      <button
-                        type="button"
-                        onClick={advance}
-                        disabled={busy}
-                        className="mt-2 h-9 w-full rounded-full bg-white/[0.12] text-[0.84rem] font-medium hover:bg-white/[0.18] disabled:opacity-50"
-                      >
-                        {order.plan
-                          ? `Collect instalment ${Math.min((order.plan.installments.filter((x) => x.status === "paid").length ?? 0) + 1, order.plan.installments.length)} of ${order.plan.installments.length}`
-                          : "Charge the next month"}
-                      </button>
-                      {note ? <p className="mt-2 text-[0.78rem] text-rose-300">{note}</p> : null}
-                    </div>
-                  ) : null}
                 </>
               )}
             </div>

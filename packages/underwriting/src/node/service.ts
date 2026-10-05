@@ -6,22 +6,22 @@
  *   const a = await uw.assess({ account, linked: { wallet, proof }, purchase: 200_000_000n });
  *   a.decision.payIn4.allowed, a.decision.reasons, a.final, a.report
  *
- * Modes: a provider with a key is live, one without reads fixtures.
- * `UNDERWRITING_MODE=fixture` forces fixtures everywhere (tests, demos with no
- * keys); `UNDERWRITING_MODE=live` forces live calls. Public RPCs need no key,
- * so they are live whenever any keyed provider is, and fixtures otherwise, so
- * a fixture persona is never mixed with a real chain's zero balance.
+ * Modes: a provider with its key is live; one without is not configured and
+ * is never called (NANSEN_API_KEY, ZERION_API_KEY, ETHERSCAN_API_KEY). Public
+ * RPCs need no key and are always live. Nothing answers in a provider's
+ * place: what only an unconfigured provider could read is absent, and every
+ * assessment says which providers were not configured (`notConfigured`).
  */
 
 import { verifyMessage } from "viem";
-import { FACTS_VERSION, HISTORY_CHAINS, MODEL_VERSION, MONAD_TESTNET } from "../core/constants.ts";
+import { FACTS_VERSION, HISTORY_CHAINS, MODEL_VERSION, MONAD_TESTNET, PROVIDER_KEYS } from "../core/constants.ts";
 import { unknownSubject } from "../core/evidence.ts";
 import { linkMessage, linkProofStaleness } from "../core/link.ts";
-import type { Address, DataMode, Hex, SubjectEvidence } from "../core/types.ts";
+import { notConfiguredProviders } from "../core/recipe.ts";
+import type { Address, Hex, KeyedProvider, ProviderMode, SubjectEvidence } from "../core/types.ts";
 import { underwrite, type UnderwriteOutcome } from "../core/underwrite.ts";
 import { collectAccount, collectLinked, type CollectOptions, type Issue, type Providers } from "./collect.ts";
 import { EtherscanClient } from "./etherscan.ts";
-import type { ClientOptions } from "./client.ts";
 import { NansenClient } from "./nansen.ts";
 import { RpcClient } from "./rpc.ts";
 import { ZerionClient } from "./zerion.ts";
@@ -39,11 +39,23 @@ export interface AssessRequest {
   allowPartial?: boolean;
 }
 
+/** A provider this deployment has no key for, and the variable that would configure it. */
+export interface NotConfigured {
+  provider: KeyedProvider;
+  env: string;
+}
+
 export interface Assessment extends UnderwriteOutcome {
   /** Unix seconds; also `facts.observedAt`. */
   assessedAt: number;
-  /** Where the evidence came from. "fixture" means none of it is live data. */
-  dataMode: DataMode | "mixed";
+  /** Each provider on this deployment: live, or not configured. */
+  providers: Record<"nansen" | "zerion" | "etherscan" | "rpc", ProviderMode>;
+  /**
+   * The providers this assessment needed and could not ask, because their key
+   * is not set. What only they read is in `absent`; the UI can say, e.g.,
+   * "Nansen not configured".
+   */
+  notConfigured: NotConfigured[];
   evidence: { account: SubjectEvidence; linked: SubjectEvidence | null };
   linkProof: { verified: boolean; reason: string | null } | null;
   /** Sources that did not answer, without secrets. */
@@ -88,21 +100,26 @@ export class Underwriter {
     this.meter = opts.creditMeter;
   }
 
-  /** Build every client from environment variables. See the README for the list. */
+  /**
+   * Build every client from environment variables. See the README for the list.
+   * `UNDERWRITING_MODE=fixture` no longer exists and is refused, so a
+   * deployment that still sets it learns at start that nothing is synthesized.
+   */
   static fromEnv(env: Record<string, string | undefined> = process.env, overrides: Partial<UnderwriterOptions> = {}): Underwriter {
-    const forced = env.UNDERWRITING_MODE === "fixture" || env.UNDERWRITING_MODE === "live" ? env.UNDERWRITING_MODE : undefined;
-    const fixturesDir = env.UNDERWRITING_FIXTURES_DIR || undefined;
+    const mode = env.UNDERWRITING_MODE?.trim();
+    if (mode && mode !== "live") {
+      throw new Error(
+        `UNDERWRITING_MODE=${mode} is not supported: underwriting reads live providers only. ` +
+          `Unset it; a provider without its key (${Object.values(PROVIDER_KEYS).join(", ")}) is reported as not configured.`,
+      );
+    }
     const meter = new CreditMeter();
-    const base: ClientOptions = { fixturesDir, mode: forced };
 
-    const nansen = new NansenClient({ ...base, apiKey: env.NANSEN_API_KEY, onResponse: (_s, res) => meter.record(res.headers) });
-    const zerion = new ZerionClient({ ...base, apiKey: env.ZERION_API_KEY });
-    const etherscan = new EtherscanClient({ ...base, apiKey: env.ETHERSCAN_API_KEY });
-    const anyLive = [nansen, zerion, etherscan].some((c) => c.mode === "live");
-    const rpcMode: DataMode = forced ?? (anyLive ? "live" : "fixture");
-    const rpcOpts: ClientOptions = { fixturesDir, mode: rpcMode };
-    const accountRpc = new RpcClient(env.MONAD_TESTNET_RPC_URL || MONAD_TESTNET.rpcUrl, MONAD_TESTNET.chainId, rpcOpts);
-    const historyRpcs = HISTORY_CHAINS.map((c) => new RpcClient(env[`RPC_URL_${c.chainId}`] || c.rpcUrl, c.chainId, rpcOpts));
+    const nansen = new NansenClient({ apiKey: env.NANSEN_API_KEY, onResponse: (_s, res) => meter.record(res.headers) });
+    const zerion = new ZerionClient({ apiKey: env.ZERION_API_KEY });
+    const etherscan = new EtherscanClient({ apiKey: env.ETHERSCAN_API_KEY });
+    const accountRpc = new RpcClient(env.MONAD_TESTNET_RPC_URL || MONAD_TESTNET.rpcUrl, MONAD_TESTNET.chainId);
+    const historyRpcs = HISTORY_CHAINS.map((c) => new RpcClient(env[`RPC_URL_${c.chainId}`] || c.rpcUrl, c.chainId));
 
     return new Underwriter({
       providers: { nansen, zerion, etherscan, accountRpc, historyRpcs },
@@ -113,15 +130,16 @@ export class Underwriter {
     });
   }
 
-  modes(): Record<"nansen" | "zerion" | "etherscan" | "rpc", DataMode> {
+  /** Each provider: live, or not configured (no key). Public RPCs are always live. */
+  modes(): Record<"nansen" | "zerion" | "etherscan" | "rpc", ProviderMode> {
     const p = this.providers;
     return { nansen: p.nansen.mode, zerion: p.zerion.mode, etherscan: p.etherscan.mode, rpc: p.accountRpc.mode };
   }
 
-  /** "live" or "fixture" when every client agrees, else "mixed". */
-  configuredMode(): DataMode | "mixed" {
-    const modes = new Set(Object.values(this.modes()));
-    return modes.size === 1 ? [...modes][0]! : "mixed";
+  /** The keyed providers without a key on this deployment, with the variable each needs. */
+  notConfigured(): NotConfigured[] {
+    const p = this.providers;
+    return [p.nansen, p.zerion, p.etherscan].filter((c) => c.mode === "not_configured").map((c) => ({ provider: c.provider as KeyedProvider, env: PROVIDER_KEYS[c.provider as KeyedProvider] }));
   }
 
   async assess(req: AssessRequest): Promise<Assessment> {
@@ -162,11 +180,12 @@ export class Underwriter {
     return {
       ...outcome,
       assessedAt: now,
-      dataMode: dataModeOf([account.evidence, linked?.evidence ?? null], this.configuredMode()),
+      providers: this.modes(),
+      notConfigured: notConfiguredProviders(issues).map((provider) => ({ provider, env: PROVIDER_KEYS[provider] })),
       evidence: { account: account.evidence, linked: linked?.evidence ?? null },
       linkProof,
       issues,
-      retryAfterSeconds: outcome.final ? null : retryAfter(issues, outcome.missing),
+      retryAfterSeconds: outcome.final ? null : retryAfter(issues, outcome.missing, outcome.absent),
       credits: { nansen: (this.meter?.total ?? 0) - creditsBefore },
     };
   }
@@ -191,23 +210,10 @@ export async function verifyLinkProof(
   }
 }
 
-function dataModeOf(subjects: Array<SubjectEvidence | null>, whenNothingAnswered: DataMode | "mixed"): DataMode | "mixed" {
-  const modes = new Set<DataMode>();
-  for (const s of subjects) {
-    if (!s) continue;
-    for (const [k, v] of Object.entries(s)) {
-      if (k === "address" || k === "role") continue;
-      const mode = (v as { mode?: DataMode }).mode;
-      if (mode) modes.add(mode);
-    }
-  }
-  if (modes.size === 0) return whenNothingAnswered;
-  if (modes.size === 1) return [...modes][0]!;
-  return "mixed";
-}
-
-function retryAfter(issues: Issue[], missing: string[]): number | null {
+function retryAfter(issues: Issue[], missing: string[], absent: string[]): number | null {
   if (missing.length === 1 && missing[0] === "linked.ownership") return null; // nothing to wait for; the buyer must sign
+  // Only a key can finish it: asking again changes nothing until one is set.
+  if (missing.some((m) => absent.includes(m))) return null;
   const waits = issues.map((i) => i.retryAfterMs ?? 0);
   const longest = Math.max(0, ...waits);
   return Math.max(30, Math.ceil(longest / 1000));

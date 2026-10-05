@@ -1,6 +1,5 @@
 import { canRead, orderForBrowser, tokenFromRequest } from "@/lib/orders/access";
 import { claimSync, getOrder, logRetrieve } from "@/lib/orders/service";
-import { requestOrigin } from "@/lib/origin";
 import { retrieveCheckoutSession } from "@/lib/polaris";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +25,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let session: { status: string; mode: string | null } | null = null;
   if (readable && new URL(req.url).searchParams.get("sync") === "1" && order.payment.sessionId && (await claimSync(id))) {
     try {
-      const retrieved = await retrieveCheckoutSession(order.payment.sessionId, requestOrigin(req));
+      const retrieved = await retrieveCheckoutSession(order.payment.sessionId);
       session = { status: retrieved.session.status, mode: retrieved.session.payment?.mode ?? null };
       order = (await logRetrieve(order.id, retrieved.log)) ?? order;
     } catch {

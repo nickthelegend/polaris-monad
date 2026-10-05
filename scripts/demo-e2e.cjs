@@ -81,8 +81,41 @@ async function buttons(page) {
 
 const results = [];
 function step(name, ok, detail = "") {
-  results.push({ name, ok, detail });
+  results.push({ name, ok: Boolean(ok), detail });
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  ${detail}` : ""}`);
+}
+/** A step this run could not reach, and why: reported, never counted as a pass. */
+function skip(name, why) {
+  results.push({ name, ok: null, detail: why });
+  console.log(`SKIP  ${name}  ${why}`);
+}
+
+/**
+ * "Raise your limit" after its tap: the line went up (or the review is still running), or the review ended with
+ * the sheet's error (e.g. a data provider that isn't set up). { up, message }.
+ */
+async function review(popup) {
+  const outcome = await until(
+    "the CRE review's outcome",
+    async () => {
+      if ((await popup.getByText(/Your limit went up|still running/).count()) > 0) return { up: true, message: "" };
+      const alert = popup.getByRole("alert").filter({ hasText: /\S/ });
+      if ((await alert.count()) > 0) return { up: false, message: (await alert.first().innerText()).replace(/\s+/g, " ").trim() };
+      return null;
+    },
+    240000,
+    2000,
+  ).catch(() => ({ up: false, message: "" }));
+  if (outcome.up) await newLimitShown(popup);
+  else await sleep(800);
+  return outcome;
+}
+
+/** The account's credit limit on chain, in base units, as the API reads it (0 for none or no account). */
+async function creditLine(account) {
+  if (!account) return 0n;
+  const body = await (await fetch(`${BUSINESS}/api/public/credit/${account}`)).json().catch(() => null);
+  return BigInt(body?.data?.onChain?.creditLimitUnits ?? "0");
 }
 
 async function until(what, fn, timeoutMs = 60000, everyMs = 1000) {
@@ -303,6 +336,11 @@ async function receiptInPopup(popup, name) {
   }
 
   // ── Pay in 4, with a credit line from the CRE workflow ────────────────
+  // The underwriting review reads Nansen, Zerion and Etherscan live, with the keys the CRE trigger has
+  // (workflows/.env), or not at all: a review that needs a provider without its key opens no line and says which
+  // key is missing. Then nothing here may open a plan: the plan's steps are reported as not run, with that reason.
+  let planOpened = false;
+  let noLineBecause = "";
   {
     const { page, popup } = await shopCheckout(context, { product: "halcyon-one", mode: "Pay in 4", prefix: "20-payin4" });
     let labels = await buttons(popup);
@@ -310,42 +348,59 @@ async function receiptInPopup(popup, name) {
     // A new buyer has no line yet: Pay in 4 opens "Raise your limit" first.
     await popup.getByRole("button", { name: labels.find((t) => /^Pay in 4/.test(t)) }).first().click();
     await sleep(1200);
-    if ((await popup.getByRole("button", { name: /Connect your wallet/ }).count()) > 0) {
+    let up = (await popup.getByRole("button", { name: /Connect your wallet/ }).count()) === 0;
+    if (!up) {
       await shot(popup, "20-payin4-5-raise-your-limit");
       await popup.getByRole("button", { name: /Connect your wallet/ }).first().click();
-      // Face ID (dev signer) for the account's consent: the Confirm sheet may not appear; the stand-in history wallet signs.
-      await until("the CRE decision", async () => (await popup.getByText(/Your limit went up|still running/).count()) > 0, 240000, 2000);
-      await newLimitShown(popup);
-      await shot(popup, "20-payin4-6-limit-raised");
-      const up = (await popup.getByText("Your limit went up").count()) > 0;
-      step("Pay in 4: Bring your history ran the CRE underwriting workflow and opened a line on chain", up);
+      const outcome = await review(popup);
+      await shot(popup, outcome.up ? "20-payin4-6-limit-raised" : "20-payin4-6-review-not-configured");
+      up = outcome.up;
+      const line = await creditLine(await buyerAddress(app, privateKeyToAccount));
+      if (up) {
+        step("Pay in 4: Bring your history ran the CRE underwriting workflow and opened a line on chain", line > 0n, `limit $${Number(line) / 1e6}`);
+      } else {
+        noLineBecause = outcome.message || "the review opened no line";
+        step(
+          "Pay in 4: Bring your history ran the CRE underwriting workflow; it says which data provider isn't set up, and no line opens",
+          /set up on this server yet/.test(outcome.message) && line === 0n,
+          `"${outcome.message}"; on-chain limit $${Number(line) / 1e6}`,
+        );
+      }
       const done = popup.getByRole("button", { name: "Done" });
-      if (await done.count()) await done.last().click();
+      if (up && (await done.count())) await done.last().click();
       await sleep(1000);
       // The checkout re-reads the line once the decision lands; until then it still offers Raise your limit.
-      await until("the checkout to read the new line", async () => (await popup.getByText(/This plan needs .* of limit/).count()) === 0, 90000, 1000).catch(() => {});
+      if (up) await until("the checkout to read the new line", async () => (await popup.getByText(/This plan needs .* of limit/).count()) === 0, 90000, 1000).catch(() => {});
     }
-    labels = await buttons(popup);
-    const start = labels.find((t) => /^Pay in 4/.test(t));
-    await shot(popup, "20-payin4-7-app-checkout-with-line");
-    await popup.getByRole("button", { name: start }).first().click();
-    await confirmInPopup(popup, "20-payin4-8");
-    step("Pay in 4: the popup shows its receipt before closing", await receiptInPopup(popup, "20-payin4-8b-app-receipt"));
-    const closed = await until("the popup to close after Pay in 4", async () => popup.isClosed(), 90000, 300).catch(() => false);
-    if (!closed) await shot(popup, "20-payin4-9-popup-still-open");
-    step("Pay in 4: the popup posted its result and closed itself", Boolean(closed));
-    await until("the shop's order page", async () => page.url().includes("/orders/"), 60000, 300);
-    await until("the plan order to read as paid", async () => {
-      await page.reload({ waitUntil: "networkidle" });
-      return (await page.getByText(/Thank you|0 of 4 paid|Pay in 4/).count()) > 0;
-    }, 90000, 3000);
-    await settle(page, 1500);
-    await shot(page, "20-payin4-9-shop-order-plan");
-    step("Pay in 4: the shop's order is paid through a Polaris plan", true, page.url().replace(SHOP, ""));
+    if (up) {
+      labels = await buttons(popup);
+      const start = labels.find((t) => /^Pay in 4/.test(t));
+      await shot(popup, "20-payin4-7-app-checkout-with-line");
+      await popup.getByRole("button", { name: start }).first().click();
+      await confirmInPopup(popup, "20-payin4-8");
+      step("Pay in 4: the popup shows its receipt before closing", await receiptInPopup(popup, "20-payin4-8b-app-receipt"));
+      const closed = await until("the popup to close after Pay in 4", async () => popup.isClosed(), 90000, 300).catch(() => false);
+      if (!closed) await shot(popup, "20-payin4-9-popup-still-open");
+      step("Pay in 4: the popup posted its result and closed itself", Boolean(closed));
+      await until("the shop's order page", async () => page.url().includes("/orders/"), 60000, 300);
+      await until("the plan order to read as paid", async () => {
+        await page.reload({ waitUntil: "networkidle" });
+        return (await page.getByText(/Thank you|0 of 4 paid|Pay in 4/).count()) > 0;
+      }, 90000, 3000);
+      await settle(page, 1500);
+      await shot(page, "20-payin4-9-shop-order-plan");
+      step("Pay in 4: the shop's order is paid through a Polaris plan", true, page.url().replace(SHOP, ""));
+      planOpened = true;
+    } else {
+      for (const name of ["Pay in 4: the popup shows its receipt before closing", "Pay in 4: the popup posted its result and closed itself", "Pay in 4: the shop's order is paid through a Polaris plan"]) {
+        skip(name, `no credit line: ${noLineBecause}`);
+      }
+      await popup.close().catch(() => {});
+    }
     await page.close();
   }
 
-  // ── A new buyer on a fresh phone: Pay in 4 creates the account and raises the limit in one tap ──
+  // ── A new buyer on a fresh phone: Pay in 4 creates the account and runs the review in one tap ──
   {
     const phone = await open({ width: 390, height: 844, profile: `${PROFILE}-newbuyer` });
     try {
@@ -359,12 +414,19 @@ async function receiptInPopup(popup, name) {
       step("New buyer: Raise your limit offers Continue with Face ID (no account on this phone yet)", Boolean(offered));
       if (offered) {
         await faceId.first().click();
-        const up = await until("the new buyer's CRE decision", async () => (await popup.getByText(/Your limit went up|still running/).count()) > 0, 240000, 2000).catch(() => false);
-        if (up) await newLimitShown(popup);
-        await shot(popup, "25-newbuyer-6-limit-raised");
-        const alert = popup.getByRole("alert");
-        const error = (await alert.count()) ? (await alert.first().innerText()).slice(0, 160) : "";
-        step("New buyer: one tap created the account and the CRE workflow opened a line", Boolean(up) && (await popup.getByText("Your limit went up").count()) > 0, error);
+        const outcome = await review(popup);
+        await shot(popup, outcome.up ? "25-newbuyer-6-limit-raised" : "25-newbuyer-6-review-not-configured");
+        const buyer = await until("the new buyer's account", () => buyerAddress(popup, privateKeyToAccount), 30000, 500).catch(() => null);
+        const line = await creditLine(buyer);
+        if (outcome.up) {
+          step("New buyer: one tap created the account and the CRE workflow opened a line", Boolean(buyer) && line > 0n, `${buyer}; limit $${Number(line) / 1e6}`);
+        } else {
+          step(
+            "New buyer: one tap created the account (Face ID) and ran the review, which says which provider isn't set up and opens no line",
+            Boolean(buyer) && /set up on this server yet/.test(outcome.message) && line === 0n,
+            `${buyer ?? "no account"}; "${outcome.message}"`,
+          );
+        }
       }
       await page.close().catch(() => {});
     } finally {
@@ -373,7 +435,9 @@ async function receiptInPopup(popup, name) {
   }
 
   // ── Collections: the CRE collections workflow collects a due instalment (DEMO_FAST_PLANS=1) ──
-  if (demo.fastPlans) {
+  if (demo.fastPlans && !planOpened) {
+    skip("Collections: the CRE collections workflow collected the first instalment on chain (a minute after checkout)", "no Pay in 4 plan opened (no credit line)");
+  } else if (demo.fastPlans) {
     const buyer = await buyerAddress(app, privateKeyToAccount);
     const paid = buyer
       ? await until("an instalment collected by the CRE collections run", async () => {
@@ -515,9 +579,13 @@ async function receiptInPopup(popup, name) {
   await dash.goto(BUSINESS + "/dashboard/plans", { waitUntil: "networkidle" });
   await settle(dash, 4000);
   await shot(dash, "43-dashboard-pay-in-4");
-  const planSealed = await until("the plan on the dashboard", async () => (await sealedRows()) > 0, 60000, 2000).catch(() => false);
-  const planLeak = await leaked();
-  step("the dashboard shows the Pay in 4 plan, sealed for the buyer, no item names", Boolean(planSealed) && !planLeak, planLeak ? `shows "${planLeak}"` : "");
+  if (planOpened) {
+    const planSealed = await until("the plan on the dashboard", async () => (await sealedRows()) > 0, 60000, 2000).catch(() => false);
+    const planLeak = await leaked();
+    step("the dashboard shows the Pay in 4 plan, sealed for the buyer, no item names", Boolean(planSealed) && !planLeak, planLeak ? `shows "${planLeak}"` : "");
+  } else {
+    skip("the dashboard shows the Pay in 4 plan, sealed for the buyer, no item names", "no Pay in 4 plan opened (no credit line)");
+  }
   await dash.goto(BUSINESS + "/dashboard/settings", { waitUntil: "networkidle" });
   await settle(dash, 3000);
   await shot(dash, "44-dashboard-settings-registered");
@@ -592,7 +660,9 @@ async function receiptInPopup(popup, name) {
 
   await context.close();
   console.log(JSON.stringify(results, null, 1));
-  if (results.some((r) => !r.ok)) process.exitCode = 1;
+  const count = (v) => results.filter((r) => r.ok === v).length;
+  console.log(`${count(true)} passed, ${count(false)} failed, ${count(null)} not run`);
+  if (results.some((r) => r.ok === false)) process.exitCode = 1;
 })().catch((e) => {
   console.error(e);
   console.log(JSON.stringify(results, null, 1));
