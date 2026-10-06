@@ -217,7 +217,12 @@ export async function authenticate(req: Request): Promise<AuthedMerchant> {
   const local = localSession(req);
   if (local) return local;
   const privy = getPrivy();
-  if (!privy) throw new HttpError(503, "auth_not_configured", "Sign-in isn't configured on this server.");
+  if (!privy) {
+    // The local session is a sign-in too: a request without its token is
+    // unauthenticated, not a server without sign-in.
+    if (getConfig().localSession) throw new HttpError(401, "unauthenticated", "Sign in to continue.");
+    throw new HttpError(503, "auth_not_configured", "Sign-in isn't configured on this server.");
+  }
 
   const found = readToken(req);
   if (!found) throw new HttpError(401, "unauthenticated", "Sign in to continue.");

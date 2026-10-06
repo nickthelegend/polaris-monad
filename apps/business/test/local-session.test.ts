@@ -43,9 +43,11 @@ describe("the local demo session", () => {
     expect(JSON.stringify(res.body.data).toLowerCase()).toContain(WALLET);
   });
 
-  it("refuses any other token, and a request with none", async () => {
-    expect((await me(withToken(`${TOKEN.slice(0, -1)}x`), params({}))).status).not.toBe(200);
-    expect((await me(request("GET", "/api/me"), params({}))).status).not.toBe(200);
+  it("refuses any other token, and a request with none, as unauthenticated", async () => {
+    // Sign-in is configured (the local session), so a missing or wrong token
+    // is a 401, never "sign-in isn't configured".
+    expect((await me(withToken(`${TOKEN.slice(0, -1)}x`), params({}))).status).toBe(401);
+    expect((await me(request("GET", "/api/me"), params({}))).status).toBe(401);
   });
 
   it("can't be configured with Privy on, in production, or with a guessable token", () => {
