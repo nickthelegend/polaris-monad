@@ -206,3 +206,11 @@ indexer.onEvent({ contract: "CollateralVault", event: "OwnershipTransferred" }, 
     configChange(st, "CollateralVault", "OwnershipTransferred", { subject: event.params.newOwner, value: event.params.previousOwner });
   }),
 );
+
+// A borrower retiring an unspent Withdraw (CollateralVault.invalidateNonce). Only a vault with
+// withdrawWithSig emits it; Monad testnet's of 28 Sep 2026 never does.
+indexer.onEvent({ contract: "CollateralVault", event: "NonceInvalidated" }, async ({ event, context }) =>
+  withStore(context, event, async (st) => {
+    configChange(st, "CollateralVault", "NonceInvalidated", { subject: event.params.borrower, value: event.params.nonce.toString() });
+  }),
+);

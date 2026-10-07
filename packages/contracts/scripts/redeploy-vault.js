@@ -1,10 +1,14 @@
 /**
  * Replace the deployment's CollateralVault with today's, which takes
- * `lockWithPermit`: a borrower securing a Pay in 4 line signs an ERC-2612
- * permit and the relayer carries it, so they never need MON. ScoreManager and
+ * `lockWithPermit` and `withdrawWithSig`: a borrower securing a Pay in 4 line
+ * signs an ERC-2612 permit, and taking it out again signs an EIP-712
+ * Withdraw; the relayer carries both, so they never need MON. ScoreManager and
  * the loan engine are pointed at it; every other address, and the apps', the
  * indexer's and the workflows' configuration, stays as it is (the vault's
  * address is in the SDK presets and the indexer config: update those after).
+ * The record gains `eip712.CollateralVault`. Collateral locked in the old
+ * vault stays there, withdrawable only by its owner's own transaction
+ * (docs/DEPLOY-LATER.md).
  *
  *   pnpm --filter @polarispay/contracts redeploy-vault:monad
  *   REDEPLOY_WHY="..." pnpm --filter @polarispay/contracts redeploy-vault:monad

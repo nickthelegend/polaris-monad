@@ -113,6 +113,17 @@ const TYPES = {
       { name: "deadline", type: "uint256" },
     ],
   },
+  // Domain: name "CollateralVault", version "1". Take collateral out through a
+  // relayer (withdrawWithSig); nonce is CollateralVault.nonces(borrower).
+  // Absent from a vault that predates it (Monad testnet's of 28 Sep 2026).
+  CollateralVault: {
+    Withdraw: [
+      { name: "borrower", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ],
+  },
   // Domain: name "MerchantRegistry", version "1".
   MerchantRegistry: {
     Registration: [
@@ -140,6 +151,7 @@ const DOMAIN_NAMES = {
   PolarisSend: { name: "PolarisSend", version: "1" },
   PolarisSplit: { name: "PolarisSplit", version: "1" },
   MerchantRegistry: { name: "MerchantRegistry", version: "1" },
+  CollateralVault: { name: "CollateralVault", version: "1" },
 };
 
 /** The real AUSD domain name and version (docs/research/ausd.md section 4.2). */

@@ -7798,6 +7798,11 @@ export declare const collateralVaultAbi: readonly [
   },
   {
     readonly "inputs": readonly [];
+    readonly "name": "InvalidSignature";
+    readonly "type": "error";
+  },
+  {
+    readonly "inputs": readonly [];
     readonly "name": "NotSeizer";
     readonly "type": "error";
   },
@@ -7837,6 +7842,16 @@ export declare const collateralVaultAbi: readonly [
       }
     ];
     readonly "name": "SafeERC20FailedOperation";
+    readonly "type": "error";
+  },
+  {
+    readonly "inputs": readonly [];
+    readonly "name": "SignatureExpired";
+    readonly "type": "error";
+  },
+  {
+    readonly "inputs": readonly [];
+    readonly "name": "SignatureWindowTooLong";
     readonly "type": "error";
   },
   {
@@ -7921,6 +7936,12 @@ export declare const collateralVaultAbi: readonly [
   },
   {
     readonly "anonymous": false;
+    readonly "inputs": readonly [];
+    readonly "name": "EIP712DomainChanged";
+    readonly "type": "event";
+  },
+  {
+    readonly "anonymous": false;
     readonly "inputs": readonly [
       {
         readonly "indexed": true;
@@ -7943,6 +7964,25 @@ export declare const collateralVaultAbi: readonly [
       }
     ];
     readonly "name": "MultiplierChanged";
+    readonly "type": "event";
+  },
+  {
+    readonly "anonymous": false;
+    readonly "inputs": readonly [
+      {
+        readonly "indexed": true;
+        readonly "internalType": "address";
+        readonly "name": "borrower";
+        readonly "type": "address";
+      },
+      {
+        readonly "indexed": false;
+        readonly "internalType": "uint256";
+        readonly "name": "nonce";
+        readonly "type": "uint256";
+      }
+    ];
+    readonly "name": "NonceInvalidated";
     readonly "type": "event";
   },
   {
@@ -7985,12 +8025,51 @@ export declare const collateralVaultAbi: readonly [
   },
   {
     readonly "inputs": readonly [];
+    readonly "name": "DOMAIN_SEPARATOR";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "bytes32";
+        readonly "name": "";
+        readonly "type": "bytes32";
+      }
+    ];
+    readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [];
     readonly "name": "MAX_MULTIPLIER_BPS";
     readonly "outputs": readonly [
       {
         readonly "internalType": "uint256";
         readonly "name": "";
         readonly "type": "uint256";
+      }
+    ];
+    readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [];
+    readonly "name": "MAX_SIGNATURE_WINDOW";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "uint64";
+        readonly "name": "";
+        readonly "type": "uint64";
+      }
+    ];
+    readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [];
+    readonly "name": "WITHDRAW_TYPEHASH";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "bytes32";
+        readonly "name": "";
+        readonly "type": "bytes32";
       }
     ];
     readonly "stateMutability": "view";
@@ -8039,6 +8118,62 @@ export declare const collateralVaultAbi: readonly [
       }
     ];
     readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [];
+    readonly "name": "eip712Domain";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "bytes1";
+        readonly "name": "fields";
+        readonly "type": "bytes1";
+      },
+      {
+        readonly "internalType": "string";
+        readonly "name": "name";
+        readonly "type": "string";
+      },
+      {
+        readonly "internalType": "string";
+        readonly "name": "version";
+        readonly "type": "string";
+      },
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "chainId";
+        readonly "type": "uint256";
+      },
+      {
+        readonly "internalType": "address";
+        readonly "name": "verifyingContract";
+        readonly "type": "address";
+      },
+      {
+        readonly "internalType": "bytes32";
+        readonly "name": "salt";
+        readonly "type": "bytes32";
+      },
+      {
+        readonly "internalType": "uint256[]";
+        readonly "name": "extensions";
+        readonly "type": "uint256[]";
+      }
+    ];
+    readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [];
+    readonly "name": "invalidateNonce";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "nonce";
+        readonly "type": "uint256";
+      }
+    ];
+    readonly "stateMutability": "nonpayable";
     readonly "type": "function";
   },
   {
@@ -8133,6 +8268,25 @@ export declare const collateralVaultAbi: readonly [
       }
     ];
     readonly "name": "lockedOf";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "";
+        readonly "type": "uint256";
+      }
+    ];
+    readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [
+      {
+        readonly "internalType": "address";
+        readonly "name": "";
+        readonly "type": "address";
+      }
+    ];
+    readonly "name": "nonces";
     readonly "outputs": readonly [
       {
         readonly "internalType": "uint256";
@@ -8290,6 +8444,68 @@ export declare const collateralVaultAbi: readonly [
       }
     ];
     readonly "name": "withdraw";
+    readonly "outputs": readonly [];
+    readonly "stateMutability": "nonpayable";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [
+      {
+        readonly "internalType": "address";
+        readonly "name": "borrower";
+        readonly "type": "address";
+      },
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "amount";
+        readonly "type": "uint256";
+      },
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "nonce";
+        readonly "type": "uint256";
+      },
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "deadline";
+        readonly "type": "uint256";
+      }
+    ];
+    readonly "name": "withdrawDigest";
+    readonly "outputs": readonly [
+      {
+        readonly "internalType": "bytes32";
+        readonly "name": "";
+        readonly "type": "bytes32";
+      }
+    ];
+    readonly "stateMutability": "view";
+    readonly "type": "function";
+  },
+  {
+    readonly "inputs": readonly [
+      {
+        readonly "internalType": "address";
+        readonly "name": "borrower";
+        readonly "type": "address";
+      },
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "amount";
+        readonly "type": "uint256";
+      },
+      {
+        readonly "internalType": "uint256";
+        readonly "name": "deadline";
+        readonly "type": "uint256";
+      },
+      {
+        readonly "internalType": "bytes";
+        readonly "name": "signature";
+        readonly "type": "bytes";
+      }
+    ];
+    readonly "name": "withdrawWithSig";
     readonly "outputs": readonly [];
     readonly "stateMutability": "nonpayable";
     readonly "type": "function";
