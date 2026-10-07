@@ -185,12 +185,18 @@ export async function listPlans(auth: AuthedMerchant): Promise<Plan[]> {
   return real.sort((a, b) => (a.openedAt < b.openedAt ? 1 : -1));
 }
 
-async function balanceCents(merchant: MerchantRecord): Promise<number> {
+/**
+ * The payout wallet's AUSD balance, in cents. Null when the chain read
+ * failed: an unknown balance is never shown as $0.00 (a dead RPC once read
+ * as "Nothing to withdraw yet" while the merchant held money).
+ */
+export async function balanceCents(merchant: Pick<MerchantRecord, "walletAddress">): Promise<number | null> {
   if (!merchant.walletAddress || !getConfig().chain) return 0;
   try {
     return unitsToCents(await walletBalanceUnits(merchant.walletAddress));
-  } catch {
-    return 0;
+  } catch (error) {
+    console.error("[balance] couldn't read the payout wallet's balance", error);
+    return null;
   }
 }
 

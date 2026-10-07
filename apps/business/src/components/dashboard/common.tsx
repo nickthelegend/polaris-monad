@@ -87,6 +87,29 @@ export function DataModeNotice({ empty, className }: { empty: boolean; className
   );
 }
 
+/**
+ * The payout wallet's balance couldn't be read from Monad (the server's
+ * `balanceCents` is null). Said as such, with a retry: never $0.00, and
+ * nothing to withdraw against until it reads.
+ */
+export function BalanceUnknown({ onRetry, retrying, className }: { onRetry: () => void; retrying?: boolean; className?: string }) {
+  return (
+    <Notice
+      tone="down"
+      role="alert"
+      className={className}
+      title="Couldn't read your balance from Monad"
+      action={
+        <Button variant="outline" size="sm" icon={<RotateCcw />} loading={retrying} onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    >
+      Your money hasn&rsquo;t moved: the read failed. Withdrawals wait until the balance reads.
+    </Notice>
+  );
+}
+
 /** The inside of a panel with nothing to show yet. */
 export function PanelEmpty({ icon, title, description, action }: { icon: ReactNode; title: string; description: string; action?: ReactNode }) {
   return <EmptyState size="sm" icon={icon} title={title} description={description} action={action} className="flex-1 justify-center" />;

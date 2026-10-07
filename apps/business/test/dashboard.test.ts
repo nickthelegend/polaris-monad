@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { GET as health } from "@/app/api/health/route";
 import { GET as listKeys, POST as createKey } from "@/app/api/keys/route";
 import { GET as overview } from "@/app/api/overview/route";
+import { GET as payouts } from "@/app/api/payouts/route";
 import { GET as network } from "@/app/api/public/network/route";
 import { GET as listWebhooks, POST as createWebhook } from "@/app/api/webhooks/route";
 import { setMerchantVerifierForTests } from "@/server/auth";
@@ -61,6 +62,25 @@ describe("dashboard routes", () => {
     signIn({ userId: "did:privy:real", walletAddress: "0x2222222222222222222222222222222222222222" });
     const res = await json(await overview(request("GET", "/api/overview"), params({})));
     expect(res.body.data).toMatchObject({ balanceCents: 100_000, today: { count: 0 } });
+  });
+
+  it("report the balance as unknown, never $0.00, when the chain read fails (Overview and Payouts)", async () => {
+    const env = setupServer();
+    env.chain.reads.balanceOf = () => {
+      throw new Error("upstream RPC error");
+    };
+    signIn({ userId: "did:privy:rpc-down", walletAddress: "0x2222222222222222222222222222222222222222" });
+    const o = await json(await overview(request("GET", "/api/overview"), params({})));
+    expect(o.status).toBe(200);
+    expect(o.body.data.balanceCents).toBeNull();
+    const p = await json(await payouts(request("GET", "/api/payouts"), params({})));
+    expect(p.status).toBe(200);
+    expect(p.body.data.balanceCents).toBeNull();
+
+    // The same merchant once the chain answers again: the real balance.
+    env.chain.reads.balanceOf = () => 1_990_000n;
+    const again = await json(await payouts(request("GET", "/api/payouts"), params({})));
+    expect(again.body.data.balanceCents).toBe(199);
   });
 });
 

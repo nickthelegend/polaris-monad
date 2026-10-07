@@ -32,6 +32,7 @@ import { useId, useMemo, useState, type ReactNode } from "react";
 import { getAddress, isAddress, zeroAddress } from "viem";
 
 import { PayoutStatusBadge } from "@/components/dashboard/bits";
+import { BalanceUnknown } from "@/components/dashboard/common";
 import { QrCode } from "@/components/qr";
 import { DataError, errorMessage } from "@/lib/data";
 import { MODE_LABEL, money, parseAmount, payInFourQuote, shortAddress } from "@/lib/data/format";
@@ -257,6 +258,10 @@ function WithdrawPanel({ payouts, payments, onSwitch }: { payouts: QueryState<Pa
         {payouts.error}
       </Notice>
     );
+  }
+  if (state && state.balanceCents === null) {
+    // The chain read failed: no figure, nothing to withdraw against.
+    return <BalanceUnknown onRetry={payouts.reload} retrying={payouts.refreshing} />;
   }
   if (!state) {
     return (

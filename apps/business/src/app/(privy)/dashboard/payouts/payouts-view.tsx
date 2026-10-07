@@ -24,7 +24,7 @@ import { ArrowUpFromLine, CalendarClock, Landmark, Zap } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Address, CopyAction, DrawerActions, ExplorerAction, PayoutStatusBadge, TxLink } from "@/components/dashboard/bits";
-import { DataModeNotice, LoadError, StaleNotice } from "@/components/dashboard/common";
+import { BalanceUnknown, DataModeNotice, LoadError, StaleNotice } from "@/components/dashboard/common";
 import { checkAddress, MoneyWidget } from "@/components/dashboard/money-widget";
 import { FigureRow, PageCoin, PageHead } from "@/components/dashboard/page-head";
 import { explorerTx } from "@/lib/chain";
@@ -99,11 +99,12 @@ export function PayoutsView() {
           <section aria-label="Your balance" className="min-w-0">
             <FigureRow
               caption="Available to withdraw"
-              value={payouts.error && !state ? "—" : state ? <Money value={state.balanceCents / 100} /> : undefined}
-              deltaLabel={state ? "AUSD on Monad" : undefined}
+              value={(payouts.error && !state) || state?.balanceCents === null ? "—" : state ? <Money value={state.balanceCents / 100} /> : undefined}
+              deltaLabel={state && state.balanceCents !== null ? "AUSD on Monad" : undefined}
               right={wallet ? <WalletPill address={wallet} label="payout account address" maxWidth={300} /> : null}
             />
             {payouts.error && !state ? <LoadError query={payouts as QueryState<unknown>} title="We couldn't load your balance" /> : null}
+            {state?.balanceCents === null ? <BalanceUnknown className="mt-4" onRetry={payouts.reload} retrying={payouts.refreshing} /> : null}
             <p className="mt-3 max-w-[600px] text-[15px] leading-relaxed text-ui-muted">
               Your balance is dollars (AUSD) in a payout account only you control. Move it in one tap, or every day on its own. Polaris&rsquo;s relayer
               pays the network fee.
