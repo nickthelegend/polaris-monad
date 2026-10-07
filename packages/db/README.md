@@ -5,7 +5,7 @@ Storage and crypto primitives for Polaris for Business (`apps/business`):
 | Module | What it is |
 |---|---|
 | `@polaris/db/store` | A small document store: `openStore("sqlite:<path>")` on Node's built-in `node:sqlite` (Node 22.13+, nothing to install or compile), or `openStore("memory:")`. Collections declare the fields they are queried by; each becomes an indexed column. `update` is an atomic read-modify-write. |
-| `@polaris/db/schema` | Every record the backend keeps (merchants, API keys, checkout sessions, idempotency keys, relays, payments, plans, subscriptions, payouts, payment links, webhook endpoints, events and deliveries, the chain cursor) and the collection specs over them. |
+| `@polaris/db/schema` | Every record the backend keeps (merchants, API keys, checkout sessions, idempotency keys, relays, payments, plans, subscriptions, payouts, payment links, webhook endpoints, events and deliveries (each with its source: the chain sync, the Envio indexer's outbox, or a test), the chain cursor, the indexer outbox's cursor) and the collection specs over them. |
 | `@polaris/db/keys` | CSPRNG ids and keys (`sk_test_…`, `pk_test_…`, `whsec_…`), HMAC-SHA256 key hashing under a server pepper, canonical JSON for request fingerprints. |
 | `@polaris/db/webhooks` | Stripe-shaped webhook signing (`Polaris-Signature: t=…,v1=…` over `${t}.${rawBody}`, exactly what `polarispay-sdk` verifies), the event envelope, the retry schedule (8 attempts over ~34 h), and one delivery attempt with an SSRF guard that refuses private addresses at connect time (DNS rebinding included). |
 

@@ -7,7 +7,7 @@ Polaris contract into the rows these read:
 | Reader | What it asks | Breaks without it |
 |---|---|---|
 | **The CRE `polaris-collections` workflow** | Which instalments are due (or due a retry on the dunning ladder), which plans are past grace, which subscriptions renew: `DueCandidates` | The workflow proposes from the indexer and the chain disposes; without it, it falls back to scanning windows of ids and retries a failing buyer on every run |
-| **The webhook dispatcher** | The `Activity` outbox after a cursor: `payment.succeeded`, `plan.opened`, `installment.collected`, `installment.failed`, `plan.completed`, `plan.liquidated`, `subscription.charged`, `subscription.canceled`, `payout.paid` | Merchants are never told they were paid |
+| **The webhook dispatcher** (Polaris for Business, [`outbox.ts`](../../apps/business/src/server/webhooks/outbox.ts)) | The `Activity` outbox after a cursor: `payment.succeeded`, `plan.opened`, `installment.collected`, `installment.failed`, `plan.completed`, `plan.liquidated`, `subscription.charged`, `subscription.canceled`, `payout.paid` | Webhooks come from the API's own chain sync alone (the receipts of what it relayed, and its log reader) |
 | **Polaris for Business** | Balance, payments, the Pay in 4 ledger with instalment tick marks and at-risk exposure, payouts, customers, daily bar and candlestick charts, CRE collector status | "Paid" only ever comes from indexed chain events, so the dashboard has nothing to show |
 | **The Polaris app** | The buyer's credit line and why, open plans and the next payment, receipts, send links | The credit screen and "Arrived" on a claimed link |
 
@@ -110,7 +110,7 @@ Then each reader points at the endpoint:
 | Reader | Setting |
 |---|---|
 | Polaris for Business (the Overview's "Indexed by Envio" feed) | `POLARIS_INDEXER_URL=http://127.0.0.1:18080/v1/graphql` |
-| The webhook outbox | `createIndexerClient({ url }).activityAfter(cursor)`, as under [The GraphQL client](#the-graphql-client) |
+| Polaris for Business's webhook dispatcher | The same `POLARIS_INDEXER_URL`: it reads the outbox five rows at a time from its stored cursor ([below](#the-webhook-dispatcher-reads-the-outbox)) |
 | The CRE collections workflow, run locally | `POLARIS_LOCAL_INDEXER_URL=http://127.0.0.1:18080/v1/graphql pnpm --filter @polaris/cre-workflows collections:local`: the real `onCron` takes its candidates from `DueCandidates` instead of scanning the chain, as a deployed workflow does with `candidates.indexerUrl` |
 
 #### What ran on 6 Oct (macOS, Docker Desktop)
@@ -187,8 +187,33 @@ Rows per entity, from GraphQL:
 The session ran twice with the same results (the second after the handlers
 described under [Tests](#tests) were added). Not run: `next dev` for the
 dashboard (the test above exercises its server code instead), and the API's
-own webhook dispatcher, which sends what the API's chain sync records and
-does not read the indexer yet (`apps/business/src/server/webhooks/dispatcher.ts`).
+own webhook dispatcher, which on 6 Oct sent only what the API's chain sync
+recorded. It reads the outbox since 7 Oct ([below](#the-webhook-dispatcher-reads-the-outbox)),
+tested against a test double; its opt-in live test has not been run against
+this endpoint yet.
+
+### The webhook dispatcher reads the outbox
+
+With `POLARIS_INDEXER_URL` set, Polaris for Business's dispatcher
+([`apps/business/src/server/webhooks/outbox.ts`](../../apps/business/src/server/webhooks/outbox.ts))
+tails `Activity` with `activityAfter(cursor, 5)`, five committed rows a page,
+and stores the last row's cursor in its SQLite store after each page, so a
+restart resumes after it. Each row becomes the merchant's event through
+`toWebhookEvent`, with the session, order and payout details from the API's
+own records, is checked with polarispay-sdk's `validateWebhookEvent`, and is
+emitted through the same function as the API's chain sync, under the same
+id. Both paths keep running (the chain sync also writes the API's records);
+whichever sees a chain event first sends it, and the other finds its id
+taken. Each delivery records which one fed it, and an indexer that doesn't
+answer leaves the chain sync sending alone, reported on `/api/health`.
+Details and tests: [apps/business README](../../apps/business/README.md#where-events-come-from-the-chain-sync-and-the-envio-indexers-outbox).
+Not run against a live indexer yet; the opt-in test is
+
+```bash
+POLARIS_INDEXER_LIVE_URL=http://127.0.0.1:18080/v1/graphql \
+POLARIS_INDEXER_LIVE_MERCHANT=$(node -p 'require("./packages/contracts/deployments/monad-local.json").demo.merchant') \
+  pnpm --filter @polaris/business test test/outbox.live.test.ts
+```
 
 ## Running it locally against Monad testnet (needs Docker)
 
@@ -367,6 +392,7 @@ const ledger = await indexer.plans(wallet, { filter: "dunning" });
 const order = await indexer.waitForOrder(orderKey); // keccak256(encodePacked(merchant, orderId))
 
 // Webhook dispatcher: tail the outbox, sign and send each event in order
+// (Polaris for Business does this in apps/business/src/server/webhooks/outbox.ts)
 let cursor = await loadCursor();
 const { activities } = await indexer.activityAfter(cursor, 100);
 for (const a of activities) {
@@ -379,16 +405,22 @@ await saveCursor(nextCursor(cursor, activities));
 ```
 
 `toWebhookEvent` builds exactly polarispay-sdk's `WebhookEvent<T>` (held to
-a copy of the SDK's types and its `validateWebhookEvent` in the client's
-tests): amounts as USD decimal strings with 2 to 6 decimals (`"25.00"`,
+the SDK's types and its `validateWebhookEvent` in the client's tests). The
+client exports that check (`validateWebhookEvent`, a verbatim copy of the
+SDK's `event-shape.ts` and `events.ts`, which `test/sdk-copy.test.ts` holds
+byte for byte to the SDK's source), because the SDK ships only a build and
+this package is TypeScript a Next.js app already transpiles. Events carry
+amounts as USD decimal strings with 2 to 6 decimals (`"25.00"`,
 `"201.534246"`), currency `"USD"`, mode `"now"` / `"later"`, EIP-55
 addresses, ISO times, instalments numbered from 1, and `session.orderId`,
 `sessionId` and `metadata` from the session you pass. Its `id` is the API's
 own, `evt_` + the first 28 hex characters of
 `sha256("<txHash>:<logIndex>:<type>")` (`webhookSourceKey`,
-`webhookEventId`), so if both the API's chain sync and the indexer path ever
-emit the same chain event, a receiver deduplicating on `id` sees it once.
-(Payouts are the exception: the API keys a payout on its own payout record.)
+`webhookEventId`), so the API's dispatcher, which reads both its chain sync
+and this outbox, stores and sends each chain event once, and a receiver
+deduplicating on `id` sees it once either way. (Payouts are the exception:
+the API keys a payout on its own payout record; its dispatcher uses that key
+for a payout row it can match to its record, and skips the others.)
 
 The CRE workflow cannot use `fetch`; it sends the same document through its
 HTTP capability. `DUE_CANDIDATES` answers in the shape the
@@ -420,7 +452,7 @@ package ships TypeScript source).
 | `test/paynow`, `plans`, `subscriptions`, `accounts` | Simulated flows through Envio's own test indexer: Pay now, Pay in 4 with dunning (a repeated skip is one miss), CRE collection, prepayment and liquidation, subscriptions with backoff, missed windows, lapses and cancellations, sends, payouts, batches, credit, CRE reports, roles; only registered merchants are followed |
 | `test/live.test.ts` (`wsl.sh live`) | The same checks, but Envio's runtime fetches the chain itself over RPC: the config, the dynamic registration and the source-side filters are exercised too |
 | `test/replay.test.ts` | A real chain: `scripts/record-fixture.mjs` runs the deploy script, the contracts' end-to-end flows and `scripts/fixture-scenarios.cjs` on a Hardhat node (port 3540) and records 170 logs of 65 kinds; replayed through the handlers, every plan, subscription, credit line, merchant balance and link equals what the contracts report, every webhook kind appears once per SDK event, every row passes polarispay-sdk's `validateWebhookEvent`, and totals equal a recount |
-| `client/test` | Every document is valid against the schema; BigInt decoding is complete; the client's requests, errors and paging; CRE task building; every webhook kind equals polarispay-sdk's types (compile time) and passes its runtime check, with the API's amounts, addresses and event ids; SHA-256 and Keccak-256 against published vectors; money; the credit and loan mirrors equal the indexer's |
+| `client/test` | Every document is valid against the schema; BigInt decoding is complete; the client's requests, errors and paging; CRE task building; every webhook kind equals polarispay-sdk's types (compile time) and passes its runtime check, with the API's amounts, addresses and event ids; the exported copy of that check is the SDK's source; SHA-256 and Keccak-256 against published vectors; money; the credit and loan mirrors equal the indexer's |
 
 Re-record the fixture after a contract change (with the workspace
 installed): `node packages/indexer/scripts/record-fixture.mjs`. It was

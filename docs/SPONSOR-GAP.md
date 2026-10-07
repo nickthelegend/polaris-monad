@@ -1,6 +1,6 @@
 # Sponsor gap: each bounty's requirement, what meets it, what's left
 
-Updated 6 Oct 2026. Requirements are from the sponsor research of 5 Oct
+Updated 7 Oct 2026. Requirements are from the sponsor research of 5 Oct
 (`METROPOLIS-SPONSORS.md`, outside this repository: the portal's bounty
 cards, read by participants) and [`submission/sources.md`](submission/sources.md);
 **the logged-in portal's wording wins** where it differs. Meeting the stated
@@ -22,7 +22,7 @@ new testnet transactions or hosting deploys.
 | **Nansen** | All | Nansen data powering a product that goes **beyond exposing raw data** | First funder, related wallets and labels become an on-chain credit score with plain-language reasons; live client behind `NANSEN_API_KEY`, labelled synthesized fixtures without it | key | `NANSEN_API_KEY` (free tier: 100 credits); then `pnpm --filter @polarispay/underwriting record --linked <wallet>` |
 | **Mera UX** | All | Mera is the **entire account layer**: one passkey ceremony, no email/OTP, prompt-free signing sessions, the stateless test | Face ID → PRF → key; no server holds a key; sessions; accounts reconstruct from the passkey | partly | The app also offers Privy email login: ask Mera, or hide it for judging. Face ID on a real iPhone/Android needs the app on its passkey domain |
 | **Mera: One Passkey, Many Keys** | All | Creative **non-wallet** use of PRF key material, a namespaced salt, a live cross-device test | The same Face ID derives an HPKE inbox key; the server keeps what you bought only as ciphertext only your Face ID opens | partly | Real cross-device test; `demo:e2e` receipts step written (branch `metropolis/receipts-e2e`), not yet run |
-| **Envio** | All | HyperIndex/HyperSync/HyperRPC behind a **core feature**; derived entities; deployed or self-hosted; a consumer | `packages/indexer` (HyperIndex) with payments, plans, instalments, subscriptions, payouts, sends, scores and CRE runs; a webhook outbox in polarispay-sdk's event shapes | key | `ENVIO_API_TOKEN` (HyperSync now requires one); run it against the local chain; Envio Cloud or self-host later |
+| **Envio** | All | HyperIndex/HyperSync/HyperRPC behind a **core feature**; derived entities; deployed or self-hosted; a consumer | `packages/indexer` (HyperIndex) with payments, plans, instalments, subscriptions, payouts, sends, scores and CRE runs; a webhook outbox in polarispay-sdk's event shapes, which Polaris for Business's webhook dispatcher reads by cursor when `POLARIS_INDEXER_URL` is set (deduplicated against its chain sync by event id; tested against a test double); the CRE collections workflow's candidates and the dashboard's feed. Run on a local chain with `pnpm indexer:local` (6 Oct) | key | `ENVIO_API_TOKEN` (HyperSync now requires one); Envio Cloud or self-host; run the dispatcher's opt-in live test (`test/outbox.live.test.ts`) against a running indexer |
 
 **Not targeting:** Aurora Intents (mainnet only, no AUSD), Dynamic (a second
 account layer), Kuru, Perpl and MetaMask (Track 1 only), Cleanverse (Track 4

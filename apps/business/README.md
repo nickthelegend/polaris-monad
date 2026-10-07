@@ -182,7 +182,7 @@ Other commands (`pnpm --filter @polaris/business <cmd>`):
 | Command | What it does |
 |---|---|
 | `dev` | The landing, dashboard and API on http://localhost:3100 |
-| `test` | 279 unit and route tests (vitest, on SQLite in memory): validation, auth, idempotency, the relayer's policy and signature checks, chain ingestion, webhook signing and retries, payouts, onboarding, the web audit's fixes (link turn-off, JSON 404/405, field errors, checksums, the write limit) and the web review's (an empty book without a chain, subscribe links, the active-link cap, registration catching up, health, malformed cookies, `next`) |
+| `test` | 312 unit and route tests (vitest, on SQLite in memory; 2 more against a live indexer are opt-in): validation, auth, idempotency, the relayer's policy and signature checks, chain ingestion, webhook signing and retries, the Envio outbox reader, payouts, onboarding, the web audit's fixes (link turn-off, JSON 404/405, field errors, checksums, the write limit) and the web review's (an empty book without a chain, subscribe links, the active-link cap, registration catching up, health, malformed cookies, `next`) |
 | `lint` | ESLint, then `scripts/check-api-auth.mjs`: every route must be exported through the authentication its path requires |
 | `typecheck`, `build` | `tsc --noEmit`; `next build` |
 | `dev:merchant` | Create a local merchant with `sk_test_`/`pk_test_` keys (and a webhook endpoint) without Privy |
@@ -333,6 +333,59 @@ chain log it came from), then one delivery per subscribed endpoint:
 Dashboard routes: `GET/POST /api/webhooks`, `DELETE /api/webhooks/{id}`,
 `POST /api/webhooks/{id}/test` (sent now, signed like a live event),
 `POST /api/webhooks/deliveries/{id}/retry`.
+
+### Where events come from: the chain sync, and the Envio indexer's outbox
+
+Without `POLARIS_INDEXER_URL`, events come from this server's own chain path:
+the relayed transaction's receipt and the chain sync (`ingest/`). With it,
+`src/server/webhooks/outbox.ts` also reads the Envio indexer's `Activity`
+outbox ([packages/indexer](../../packages/indexer/README.md)), one row per
+polarispay-sdk event in chain order:
+
+- **By cursor, five rows a page** (`activityAfter(cursor, 5)`, only rows the
+  indexer has committed), up to 20 pages a pass, in the background loop every
+  2 s and first in every `/api/cron/tick`. The cursor is stored in the SQLite
+  store (`indexer_outbox`) after each page, so a restart resumes after the
+  last row handled. The first read starts where the chain sync starts
+  (`POLARIS_SYNC_FROM_BLOCK`, else the deployment's first block, else the
+  indexer's current progress: no backfill).
+- **The same events, never twice.** Each row becomes the event through the
+  indexer client's `toWebhookEvent`, with what the chain doesn't know taken
+  from this server's records as the chain sync takes it (the merchant's
+  `mer_…` id, the checkout session, a plan's or subscription's order and
+  session ids, a payout's id and kind), and is checked with polarispay-sdk's
+  `validateWebhookEvent` before it is stored. It goes through the same
+  `emitEvent` under the same id (`evt_` + sha256 of
+  `<txHash>:<logIndex>:<type>`; a payout keys on its payout record), so
+  whichever path sees a chain event first stores it and queues its
+  deliveries, and the other finds the id taken and sends nothing. Signing,
+  retries and the delivery log are unchanged.
+- **The same refusals.** A settlement that doesn't pay its session sends no
+  `payment.succeeded` or `plan.opened`; rows for wallets that aren't
+  merchants here, and payouts this server didn't make, are skipped. A row
+  whose event fails the SDK's check, or that an older indexer wrote
+  incomplete, is refused and logged, and the cursor moves on (the chain sync
+  still sends that event from its own logs).
+- **Which source fed each delivery** is in the dashboard's delivery log
+  (an "Envio" or "Chain sync" pill, and "Source" in the delivery's drawer)
+  and on `GET /api/webhooks` (`source` per delivery, `feed.mode`).
+- **An indexer that doesn't answer** is a fallback, not an outage: the read
+  is recorded, retried after 15 s, the chain sync carries on alone, the
+  delivery log says so, and `GET /api/health` reports `webhooks.source:
+  "fallback"` and, for the operator (`Bearer <CRON_SECRET>`), a problem
+  naming it (the endpoint itself is never repeated; it can carry a key).
+  `/api/health/ready` doesn't wait on it.
+
+Tested in `test/outbox.test.ts` against a test double of the indexer's
+GraphQL endpoint (paging, committed rows, the start block, a restart on a
+SQLite file, dedupe both ways and inside one tick, payouts, refusals, all
+nine kinds through the SDK's validator and signature check, an unreachable
+indexer through the fake and through the real client, an indexer of another
+chain). `test/outbox.live.test.ts`
+runs the same reader against a live indexer, skipped unless
+`POLARIS_INDEXER_LIVE_URL` and `POLARIS_INDEXER_LIVE_MERCHANT` are set (as for
+`insights.live.test.ts`, [packages/indexer](../../packages/indexer/README.md#what-ran-on-6-oct-macos-docker-desktop)).
+It has not been run yet: the dispatcher has not read a live indexer.
 
 ## Merchants, onboarding and payouts
 
@@ -538,6 +591,7 @@ See [`.env.example`](.env.example) for every variable. The essentials:
 | `POLARIS_CHECKOUT_ORIGIN` | Where link and session URLs point (the Polaris app). Required in production: without it links don't go live and sessions answer 503 |
 | `POLARIS_PUBLIC_URL` | This server's URL, signed into each merchant's registry metadata. Required in production: registration waits for it |
 | `CRON_SECRET` | For `/api/cron/tick`, and for the list of production problems on `/api/health` |
+| `POLARIS_INDEXER_URL` (+ `POLARIS_INDEXER_TOKEN`) | The Envio indexer's GraphQL endpoint: the Overview's "Indexed by Envio" feed, and the webhook outbox ([Webhooks](#where-events-come-from-the-chain-sync-and-the-envio-indexers-outbox)) |
 | `CRE_UNDERWRITING_TRIGGER_URL`, `POLARIS_CRE_CALLBACK_SECRET` | The CRE underwriting trigger, and the secret its callbacks are signed with |
 | `POLARIS_TRUSTED_PROXIES` | How many proxies append to `X-Forwarded-For` in front of this server (per-IP limits; `POLARIS_TRUST_PROXY=1`, the older setting, means 1) |
 
@@ -551,7 +605,7 @@ src/server/policy/             the relayer, registry-admin and payout policies (
 src/server/relayer/            relay.ts (requests), carry.ts (bookkeeping), submit.ts (gas, nonces, broadcast), signer.ts (Privy / local)
 src/server/sessions/           params.ts (the SDK's validation), idempotency.ts, sessions.ts
 src/server/ingest/             ingest.ts (chain events → records + webhooks), sync.ts (the log poller, late receipts)
-src/server/webhooks/           events.ts (emit), dispatcher.ts (deliver, retry)
+src/server/webhooks/           events.ts (emit), dispatcher.ts (deliver, retry), outbox.ts (the Envio indexer's Activity outbox)
 src/server/payouts/            withdrawals and the automatic sweep
 src/server/onboarding.ts       MerchantRegistry registration and activation (after settlement history)
 src/server/credit/             CRE underwriting: the texts to sign, the request queue and trigger, the signed callbacks
