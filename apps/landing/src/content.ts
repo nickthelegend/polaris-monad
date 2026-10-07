@@ -83,7 +83,7 @@ export const logos = {
 
 export const stripe = {
   heading: ["Stripe for every", "app on Monad"],
-  primary: { label: "Start accepting", href: linkTo(BUSINESS_URL, "/", "#pricing") },
+  primary: { label: "Start accepting", href: linkTo(BUSINESS_URL, "/login", "#pricing") },
   secondary: { label: "Read the docs", href: "#faq" },
   paragraphs: [
     {
@@ -136,7 +136,7 @@ export const credit = {
 export const pricing = {
   heading: ["0.5% per payment.", "No hidden fees."],
   body: "Pay 0.5% when a payment lands, against about 3% for cards. Instalments, collections and credit risk are ours, not yours.",
-  cta: { label: "Start accepting", href: linkTo(BUSINESS_URL, "/", "#talk") },
+  cta: { label: "Start accepting", href: linkTo(BUSINESS_URL, "/login", "#talk") },
   calculator: {
     title: "Calculator",
     salesLabel: "Your monthly sales",
