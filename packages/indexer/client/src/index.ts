@@ -44,6 +44,7 @@ export {
   type WebhookEventType,
   type WebhookSession,
 } from "./webhooks.ts";
+export { assertWebhookEvent, validateWebhookEvent, type WebhookEventProblem } from "./sdk-event-shape.ts";
 export { AUSD_DECIMALS, formatAmount, formatUsd, fromCents, toCents } from "./money.ts";
 export { installmentSlice, thresholdFor } from "./loans.ts";
 export { checksumAddress, keccak256Hex, sha256Hex } from "./hash.ts";

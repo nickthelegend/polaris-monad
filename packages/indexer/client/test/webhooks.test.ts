@@ -21,8 +21,8 @@ import {
   type WebhookEventType,
   type WebhookKind,
 } from "../src/index.js";
-import { validateWebhookEvent } from "./sdk-event-shape.js";
-import type { WebhookEvent as SdkWebhookEvent, WebhookEventDataMap as SdkDataMap, WebhookEventType as SdkEventType } from "./sdk-events.js";
+import { validateWebhookEvent } from "../src/sdk-event-shape.js";
+import type { WebhookEvent as SdkWebhookEvent, WebhookEventDataMap as SdkDataMap, WebhookEventType as SdkEventType } from "../src/sdk-events.js";
 
 /* ── The client's types are the SDK's (checked by `pnpm typecheck`) ─────── */
 

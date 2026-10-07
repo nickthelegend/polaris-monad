@@ -287,6 +287,11 @@ export type WebhookDelivery = {
   durationMs: number | null;
   attempt: number;
   test: boolean;
+  /**
+   * What fed its event: this server's chain sync, the Envio indexer's outbox, or
+   * "Send test event". Absent on deliveries made before it was recorded.
+   */
+  source?: "chain" | "indexer" | "test";
   /** True only for a delivery that was signed and logged but never sent. Live and test deliveries are sent. */
   simulated: boolean;
   /** The exact headers and body of the last attempt (the body is the same on every attempt). */
@@ -303,9 +308,17 @@ export type WebhookDelivery = {
   attempts?: Array<{ at: IsoDate; status: number | null; durationMs: number; error: string | null; responseBody: string | null }>;
 };
 
+/**
+ * Where live events come from: "chain-sync" (no indexer configured),
+ * "indexer" (the Envio indexer's outbox, the chain sync as backup), or
+ * "fallback" (the indexer is configured but didn't answer: the chain sync alone).
+ */
+export type WebhookFeed = { mode: "chain-sync" | "indexer" | "fallback"; checkedAt: IsoDate | null };
+
 export type WebhooksState = {
   endpoints: WebhookEndpoint[];
   deliveries: WebhookDelivery[];
+  feed?: WebhookFeed;
 };
 
 /* ── Onboarding on chain ────────────────────────────────────────────────── */

@@ -53,6 +53,7 @@ import { createPayoutPolicy } from "./payout-policy";
 import { nextRunAt, runPayoutSweep, walletBalanceUnits, withdrawSigned } from "./payouts/payouts";
 import { dispatchDue } from "./webhooks/dispatcher";
 import { emitEvent } from "./webhooks/events";
+import { outboxHealth } from "./webhooks/outbox";
 import { merchantInsights } from "./insights";
 
 /**
@@ -483,6 +484,7 @@ export function toDelivery(d: WebhookDeliveryRecord): WebhookDelivery {
     durationMs: last?.durationMs ?? null,
     attempt: d.attempts.length,
     test: d.test,
+    source: d.source ?? (d.test ? "test" : "chain"),
     simulated: false,
     request: d.request ?? { headers: {}, body: "" },
     createdAt: d.createdAt,
@@ -495,11 +497,16 @@ export function toDelivery(d: WebhookDeliveryRecord): WebhookDelivery {
 export async function listWebhooks(auth: AuthedMerchant): Promise<WebhooksState> {
   const merchant = await ensureMerchant(auth);
   const db = getDb();
-  const [endpoints, deliveries] = await Promise.all([
+  const [endpoints, deliveries, outbox] = await Promise.all([
     db.webhookEndpoints.find({ merchantId: merchant.id }, { orderBy: "createdAt" }),
     db.webhookDeliveries.find({ merchantId: merchant.id }, { orderBy: "createdAt", direction: "desc", limit: 100 }),
+    outboxHealth(),
   ]);
-  return { endpoints: endpoints.filter((e) => !e.disabledAt).map(toEndpoint), deliveries: deliveries.map(toDelivery) };
+  return {
+    endpoints: endpoints.filter((e) => !e.disabledAt).map(toEndpoint),
+    deliveries: deliveries.map(toDelivery),
+    feed: { mode: outbox.mode, checkedAt: outbox.polledAt },
+  };
 }
 
 const MAX_ENDPOINTS = 10;

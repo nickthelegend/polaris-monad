@@ -435,7 +435,17 @@ export type WebhookEventRecord = {
   /** Dedupes chain-sourced events: `<txHash>:<logIndex>:<type>`, or `test:<id>`. */
   sourceKey: string;
   test: boolean;
+  /** What fed it (absent on events written before it was recorded: the chain sync's, or a test). */
+  source?: WebhookSource;
 };
+
+/**
+ * Where an event came from: this server's own chain sync (a relayed
+ * transaction's receipt, or its log reader), the Envio indexer's `Activity`
+ * outbox, or the dashboard's "Send test event". Whichever chain path sees an
+ * event first stores it; the other finds its id taken and sends nothing.
+ */
+export type WebhookSource = "chain" | "indexer" | "test";
 
 export type DeliveryAttempt = {
   at: IsoDate;
@@ -463,6 +473,8 @@ export type WebhookDeliveryRecord = {
   /** The headers and body of the last attempt. */
   request: { headers: Record<string, string>; body: string } | null;
   test: boolean;
+  /** Its event's source, copied for the delivery log (absent on older deliveries). */
+  source?: WebhookSource;
   createdAt: IsoDate;
   updatedAt: IsoDate;
 };
@@ -470,6 +482,31 @@ export type WebhookDeliveryRecord = {
 /* ── Chain sync bookkeeping ─────────────────────────────────────────────── */
 
 export type ChainCursorRecord = { id: string; block: number; updatedAt: IsoDate };
+
+/**
+ * The webhook dispatcher's place in the Envio indexer's `Activity` outbox
+ * (POLARIS_INDEXER_URL), and how its last read went. One record, id
+ * `activity`. `cursor` is the last row handled, as a decimal string (the
+ * indexer's cursor is `blockNumber * 10^8 + logIndex * 100 + slot`, past
+ * 2^53 on a long chain), or "" while no read has answered yet.
+ */
+export type IndexerOutboxRecord = {
+  id: string;
+  cursor: string;
+  /** The indexer's progress block at the last successful read. */
+  progressBlock: number | null;
+  /** Last read attempt, and last one that answered. */
+  polledAt: IsoDate | null;
+  okAt: IsoDate | null;
+  /** The last failed read, in words without the endpoint (cleared by the next success). */
+  error: string | null;
+  errorAt: IsoDate | null;
+  /** Rows handled since the cursor started: sent as a new event, already sent by the chain sync, not ours, refused. */
+  counts: { emitted: number; duplicates: number; skipped: number; rejected: number };
+  /** The last row refused (its event failed polarispay-sdk's validateWebhookEvent, or the row was incomplete). */
+  lastRejected: { cursor: string; kind: string; reason: string; at: IsoDate } | null;
+  updatedAt: IsoDate;
+};
 
 /**
  * Dollars moving in or out of one address outside a merchant's own records:
@@ -853,6 +890,11 @@ export const COLLECTIONS = {
     id: (d: ChainCursorRecord) => d.id,
     indexes: {},
   } satisfies CollectionSpec<ChainCursorRecord>,
+  indexerOutbox: {
+    name: "indexer_outbox",
+    id: (d: IndexerOutboxRecord) => d.id,
+    indexes: {},
+  } satisfies CollectionSpec<IndexerOutboxRecord>,
   walletMoves: {
     name: "wallet_moves",
     id: (d: WalletMoveRecord) => d.id,
@@ -949,6 +991,7 @@ export function collections(store: Store) {
     webhookEvents: store.collection(COLLECTIONS.webhookEvents),
     webhookDeliveries: store.collection(COLLECTIONS.webhookDeliveries),
     cursors: store.collection(COLLECTIONS.cursors),
+    indexerOutbox: store.collection(COLLECTIONS.indexerOutbox),
     walletMoves: store.collection(COLLECTIONS.walletMoves),
     splits: store.collection(COLLECTIONS.splits),
     processedLogs: store.collection(COLLECTIONS.processedLogs),

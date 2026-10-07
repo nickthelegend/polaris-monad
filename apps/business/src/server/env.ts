@@ -183,7 +183,9 @@ export type ServerConfig = {
   underwriting: { gatewayUrl: string | null; apiToken: string | null };
   /**
    * The Polaris Envio indexer's GraphQL endpoint (POLARIS_INDEXER_URL, and
-   * POLARIS_INDEXER_TOKEN on a paid plan): the Overview's event feed reads it.
+   * POLARIS_INDEXER_TOKEN on a paid plan): the Overview's event feed reads
+   * it, and the webhook dispatcher reads its `Activity` outbox
+   * (webhooks/outbox.ts), with the chain sync as backup.
    */
   indexer: { url: string | null; token: string | null };
   /**

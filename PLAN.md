@@ -169,11 +169,20 @@ Each task: objective · acceptance · verify · status.
   values equal the contracts, all nine webhook kinds in the outbox,
   DueCandidates listed a due loan and subscription; the dashboard path
   (`insights.live.test.ts`), the SDK's webhook validator and a real
-  `polaris-collections` run read it. Left: the API's own webhook dispatcher
-  still sends from its chain sync, not the indexer outbox (P3.3)
+  `polaris-collections` run read it. The API's own webhook dispatcher, which
+  then sent only from its chain sync, reads the outbox since P3.3
 - **P3.3 Dispatcher from the indexer** (optional): when
   `POLARIS_INDEXER_URL` is set, read the `Activity` outbox by cursor. ·
-  NOT STARTED (P3)
+  DONE in code and tests (7 Oct, `metropolis/envio-webhooks`):
+  `apps/business/src/server/webhooks/outbox.ts` reads five rows a page from a
+  cursor kept in the SQLite store, emits through the chain sync's own
+  `emitEvent` under the same event id (so neither source sends an event the
+  other sent), checks every event with polarispay-sdk's
+  `validateWebhookEvent`, records each delivery's source (dashboard log,
+  `GET /api/webhooks`), and falls back to the chain sync alone when the
+  indexer doesn't answer (`/api/health` says so). `test/outbox.test.ts`, 16
+  tests against a test double of the indexer's GraphQL. Not run against a
+  live indexer: `test/outbox.live.test.ts` is written and skipped by default
 - **P3.2 Envio on testnet** needs `ENVIO_API_TOKEN` and the testnet go. ·
   BLOCKED
 

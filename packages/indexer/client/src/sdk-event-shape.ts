@@ -1,12 +1,10 @@
 /**
- * A verbatim copy of polarispay-sdk's runtime event check
- * (packages/sdk/src/event-shape.ts on metropolis/sdk at f3ed4be), importing
- * the copied types next to it. webhooks.test.ts runs every event the client
- * builds through it. Once the branches are merged, import
- * validateWebhookEvent from "polarispay-sdk" instead and delete this file.
+ * polarispay-sdk's runtime event check (packages/sdk/src/event-shape.ts),
+ * verbatim, importing the copied types beside it. test/sdk-copy.test.ts
+ * fails if it drifts from the SDK's source.
  */
 
-import { WEBHOOK_EVENT_TYPES, isWebhookEventType, type WebhookEvent, type WebhookEventType } from "./sdk-events.js";
+import { WEBHOOK_EVENT_TYPES, isWebhookEventType, type WebhookEvent, type WebhookEventType } from "./sdk-events.ts";
 
 /**
  * A runtime check that an event is shaped exactly as `WebhookEvent` says:

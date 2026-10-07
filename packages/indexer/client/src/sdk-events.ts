@@ -1,9 +1,11 @@
 /**
- * A verbatim copy of polarispay-sdk's webhook event types
- * (packages/sdk/src/events.ts on metropolis/sdk at f3ed4be), with its one
- * import inlined, so webhooks.test.ts can hold the client's events to the
- * SDK's on a branch that doesn't have the SDK. Once the branches are merged,
- * import these from "polarispay-sdk" instead and delete this file.
+ * polarispay-sdk's webhook event types and type list (packages/sdk/src/events.ts),
+ * verbatim, with its one import (three type aliases) inlined. The dispatcher
+ * in Polaris for Business runs the SDK's validateWebhookEvent
+ * (./sdk-event-shape.ts) on every event it builds from the outbox; this
+ * package ships TypeScript source that Next.js already transpiles, the SDK
+ * ships only a build. test/sdk-copy.test.ts fails if either copy drifts from
+ * the SDK's source.
  */
 
 type Address = `0x${string}`;
