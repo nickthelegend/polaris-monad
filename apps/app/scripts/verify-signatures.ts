@@ -55,6 +55,7 @@ import {
   buildRepayIntent,
   buildSubscribeIntent,
   buildTransferWithAuthorization,
+  buildWithdraw,
   domainFromErc5267,
   type Eip712Domain,
   paymentNonce,
@@ -231,6 +232,7 @@ const cases = [
     deadline: now + 600n,
   }),
   buildCloseSplit(domain, { splitId: keccak256(toHex("split")), deadline: now + 600n }),
+  buildWithdraw(domain, { borrower: buyer.address, amount: 25_000_000n, nonce: 2n, deadline: now + 600n }),
 ] as const;
 
 for (const typed of cases) {

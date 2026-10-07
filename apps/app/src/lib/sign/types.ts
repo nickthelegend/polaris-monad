@@ -56,6 +56,9 @@ export const CANCEL_SUBSCRIPTION_TYPE = "CancelSubscription(uint256 subId,uint25
 /** PolarisLoanEngine: pay a plan early. `expectedRepaid` pins the plan's state; `nonce` is PolarisLoanEngine.nonces(borrower). */
 export const REPAY_INTENT_TYPE = "RepayIntent(uint256 loanId,uint256 amount,uint256 expectedRepaid,uint256 nonce,uint256 deadline)";
 
+/** CollateralVault: take dollars out of Boost. `nonce` is CollateralVault.nonces(borrower); the vault pays the borrower only. */
+export const WITHDRAW_TYPE = "Withdraw(address borrower,uint256 amount,uint256 nonce,uint256 deadline)";
+
 const AUTHORIZATION_FIELDS = [
   { name: "from", type: "address" },
   { name: "to", type: "address" },
@@ -166,6 +169,15 @@ export const repayIntentTypes = {
   ],
 } as const;
 
+export const withdrawTypes = {
+  Withdraw: [
+    { name: "borrower", type: "address" },
+    { name: "amount", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
 /** Every struct with the typehash preimage the contract declares for it. */
 /**
  * Every struct with the typehash preimage the app believes the contract
@@ -229,4 +241,5 @@ export const TYPE_REGISTRY = [
     contract: "PolarisLoanEngine.sol",
     constant: "REPAY_INTENT_TYPEHASH",
   },
+  { primaryType: "Withdraw", types: withdrawTypes, solidity: WITHDRAW_TYPE, contract: "CollateralVault.sol", constant: "WITHDRAW_TYPEHASH" },
 ] as const;

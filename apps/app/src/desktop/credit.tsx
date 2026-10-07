@@ -23,12 +23,12 @@ import {
   Ticks,
   TimeframeChips,
 } from "@polaris/ui";
-import { CalendarClock, Gauge, Info, Layers, Sparkles, TrendingUp } from "lucide-react";
+import { ArrowDownToLine, CalendarClock, Gauge, Info, Layers, Sparkles, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { MerchantAvatar } from "@/components/avatars";
-import { BoostSheet } from "@/components/boost-sheet";
+import { type BoostMode, BoostSheet } from "@/components/boost-sheet";
 import { BringHistorySheet } from "@/components/bring-history";
 import { ConfirmSheet } from "@/components/confirm-sheet";
 import { CreditGuardLine } from "@/components/credit-guard-note";
@@ -77,7 +77,7 @@ export function CreditDesktop() {
   const boost = useData(() => getBoost(owner), [owner]);
   const [frame, setFrame] = useState<Frame>("1m");
   const [raising, setRaising] = useState(false);
-  const [boosting, setBoosting] = useState(false);
+  const [boosting, setBoosting] = useState<BoostMode | null>(null);
   const now = useNow();
 
   const series = useMemo(
@@ -210,9 +210,14 @@ export function CreditDesktop() {
               {c?.historyLinked ? "History linked" : "Raise your limit"}
             </SecondaryButton>
             {boost.value ? (
-              <SecondaryButton size="lg" block iconRight={<Sparkles />} onClick={() => setBoosting(true)}>
-                Add to Boost
-              </SecondaryButton>
+              <>
+                <SecondaryButton size="lg" block iconRight={<Sparkles />} onClick={() => setBoosting("add")}>
+                  Add to Boost
+                </SecondaryButton>
+                <SecondaryButton size="lg" block iconRight={<ArrowDownToLine />} onClick={() => setBoosting("takeOut")}>
+                  Take out of Boost
+                </SecondaryButton>
+              </>
             ) : null}
             <SideNote>
               Your line grows as you pay on time. Pay in 4 is 10% a year, and each plan shows every payment and the interest before you confirm.
@@ -222,7 +227,7 @@ export function CreditDesktop() {
         }
       />
       <BringHistorySheet open={raising} onOpenChange={setRaising} credit={c} />
-      <BoostSheet open={boosting} onOpenChange={setBoosting} />
+      <BoostSheet open={boosting !== null} mode={boosting ?? "add"} onOpenChange={(o) => !o && setBoosting(null)} />
     </>
   );
 }

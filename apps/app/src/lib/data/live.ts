@@ -4,6 +4,8 @@ import { api } from "../api";
 import { type ApiCreditGuard, toGuardView } from "../credit-guard";
 import { publicClient } from "../chain";
 import { resolveContract } from "../domains";
+import { env } from "../env";
+import { type Eip712Domain, readDomain } from "../sign";
 import { getNetwork } from "../network";
 import type { Micros } from "../money";
 import { prefsName } from "../prefs";
@@ -400,6 +402,25 @@ function firstSeen(b: BuyerBook): number | null {
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
+const takeOutDomains = new Map<Address, Eip712Domain>();
+
+/**
+ * The vault's EIP-712 domain when it takes `withdrawWithSig`, read from the
+ * vault (ERC-5267), or null. A vault that predates signed withdrawal has no
+ * `eip712Domain()` (the read fails), and one that names anything but
+ * "CollateralVault" v1 at its own address on this chain doesn't count. A yes
+ * is kept for the session (code doesn't change); a no is read again next time.
+ */
+async function vaultTakeOutDomain(vault: Address): Promise<Eip712Domain | null> {
+  const known = takeOutDomains.get(vault);
+  if (known) return known;
+  const domain = await readDomain(publicClient(), vault).catch(() => null);
+  if (!domain || domain.name !== "CollateralVault" || domain.version !== "1" || !domain.verifyingContract || getAddress(domain.verifyingContract) !== getAddress(vault)) return null;
+  if (domain.chainId !== undefined && domain.chainId !== env.chainId) return null;
+  takeOutDomains.set(vault, domain);
+  return domain;
+}
+
 export const liveData: PolarisData = {
   async getProfile(owner): Promise<Profile> {
     // The name is the one the buyer chose on this device (their send links carry it).
@@ -421,11 +442,13 @@ export const liveData: PolarisData = {
     const vault = network ? (await network).vault : null;
     if (!vault) return null;
     const client = publicClient();
-    const [locked, multiplier] = await Promise.all([
+    const [locked, multiplier, withdrawable, takeOut] = await Promise.all([
       owner ? client.readContract({ address: vault, abi: vaultAbi, functionName: "lockedOf", args: [owner] }) : 0n,
       client.readContract({ address: vault, abi: vaultAbi, functionName: "creditMultiplierBps" }),
+      owner ? client.readContract({ address: vault, abi: vaultAbi, functionName: "withdrawable", args: [owner] }) : 0n,
+      vaultTakeOutDomain(vault),
     ]);
-    return { locked, multiplierBps: Number(multiplier), vault, updatedAt: Date.now() };
+    return { locked, multiplierBps: Number(multiplier), vault, withdrawable, takeOut, updatedAt: Date.now() };
   },
 
   async getCreditLine(owner): Promise<CreditLine> {

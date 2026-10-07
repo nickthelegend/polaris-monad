@@ -15,18 +15,18 @@ import {
   Sheet,
   Skeleton,
 } from "@polaris/ui";
-import { Gauge, Sparkles } from "lucide-react";
+import { ArrowDownToLine, Gauge, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { MerchantAvatar, merchantBrand } from "@/components/avatars";
-import { BoostSheet } from "@/components/boost-sheet";
+import { type BoostMode, BoostSheet } from "@/components/boost-sheet";
 import { BringHistorySheet } from "@/components/bring-history";
 import { CreditGuardLine } from "@/components/credit-guard-note";
 import { CreditProvenance } from "@/components/credit-provenance";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
 import { CreditDesktop } from "@/desktop/credit";
 import { useOwner } from "@/lib/account/hooks";
-import { boostPerDollar, boostTerms } from "@/lib/boost";
+import { boostPerDollar, boostTerms, takeOutState } from "@/lib/boost";
 import { type Boost, type CreditLine, getBoost, getCreditLine, getPlans } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
 import { relativeDay, shortDate } from "@/lib/dates";
@@ -42,7 +42,7 @@ export function CreditSheet() {
   const plans = useData(() => getPlans(owner), [owner]);
   const boost = useData(() => getBoost(owner), [owner]);
   const [raising, setRaising] = useState(false);
-  const [boosting, setBoosting] = useState(false);
+  const [boosting, setBoosting] = useState<BoostMode | null>(null);
 
   const active = plans.value?.plans.filter((p) => p.status === "active") ?? [];
   const upcoming = active
@@ -144,7 +144,14 @@ export function CreditSheet() {
               tone="tint-purple"
               title="Add to Boost"
               description={boostRow(boost.value, credit.value)}
-              onClick={() => setBoosting(true)}
+              onClick={() => setBoosting("add")}
+            />
+            <ListRow
+              icon={<ArrowDownToLine />}
+              tone="tint-purple"
+              title="Take out of Boost"
+              description={takeOutRow(boost.value)}
+              onClick={() => setBoosting("takeOut")}
             />
           </ListGroup>
         ) : null}
@@ -159,7 +166,7 @@ export function CreditSheet() {
         </div>
       </Sheet.Body>
       <BringHistorySheet open={raising} onOpenChange={setRaising} credit={credit.value} />
-      <BoostSheet open={boosting} onOpenChange={setBoosting} />
+      <BoostSheet open={boosting !== null} mode={boosting ?? "add"} onOpenChange={(o) => !o && setBoosting(null)} />
     </div>
   );
 }
@@ -173,6 +180,20 @@ function boostRow(boost: Boost, credit: CreditLine | null | undefined): string {
   const terms = boostTerms(boost, credit);
   const locked = `${usd(boost.locked)} locked now.`;
   return terms ? `${locked} Each $1 adds ${usd(boostPerDollar(terms))} to your limit.` : locked;
+}
+
+/** The Take out row: what's free to take out now, or why nothing is. */
+function takeOutRow(boost: Boost): string {
+  switch (takeOutState(boost)) {
+    case "unsupported":
+      return "Not available on this network yet.";
+    case "empty":
+      return "Nothing in Boost yet.";
+    case "in-use":
+      return "It secures your Pay in 4 plan until that's paid off.";
+    default:
+      return `${usd(boost.withdrawable)} free to take out.`;
+  }
 }
 
 /** The route: the intercepting page in app/@sheet (over the current tab), or the page itself (cold, over its tab). */
