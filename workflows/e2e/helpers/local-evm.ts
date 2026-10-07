@@ -13,7 +13,11 @@
  *                                receiver's revert cheaply, so on a fork of Monad testnet an
  *                                estimate settles where the receiver runs out of gas inside the
  *                                catch and the delivery still lands (packages/contracts README,
- *                                "Rehearse real AUSD on a fork").
+ *                                "Rehearse real AUSD on a fork"). Like Monad testnet's own
+ *                                eth_estimateGas (measured: workflows/evidence/gas/), the traced
+ *                                gas covers the delivered path but not the EIP-150 hold-back of
+ *                                the frames above the receiver, which the workflow adds
+ *                                (src/shared/evm.ts `deliveryGas`).
  *   headerByNumber               eth_getBlockByNumber: number and timestamp
  *   writeReport                  MockKeystoneForwarder.report(receiver, rawReport, context, sigs),
  *                                sent by the broadcasting key with the workflow's gas limit, and

@@ -6,7 +6,8 @@
  * Two CRE facts shape this file (docs/research/cre.md):
  *   - Monad bills the gas *limit*. So a report's limit is sized from an
  *     estimate of the signed report itself, plus 15%, clamped (plan §5.3).
- *     Never the 10M cap.
+ *     Never the 10M cap. An estimate of the whole delivery is first lifted
+ *     past the forwarder's catch (`deliveryGas`), measured on Monad testnet.
  *   - Under `cre workflow simulate`, a receiver that reverts still reads as
  *     success (§6.4): the mock forwarder swallows the revert. So after every
  *     write the receipt is read back and the forwarder's own
@@ -131,8 +132,9 @@ export function splitReport(report: Report): { metadata: Hex; body: Hex } {
  * Estimated at the receiver, not at the forwarder: a forwarder catches the
  * receiver's revert, so an estimate of `forwarder.report` can settle on a
  * limit where the receiver runs out of gas inside the catch and the
- * transaction still "succeeds". Our receivers revert the whole report when a
- * task runs out of gas, so this estimate cannot be fooled that way.
+ * transaction still "succeeds" (`deliveryGas`). Our receivers revert the
+ * whole report when a task runs out of gas, so this estimate cannot be
+ * fooled that way. The forwarder's own frames are `gas.overhead`.
  */
 export function estimateOnReport(
   runtime: Runtime<unknown>,
@@ -146,10 +148,12 @@ export function estimateOnReport(
 
 /**
  * Gas for the whole delivery, `forwarder.report(...)` sent by `from`. For a
- * receiver that also checks the transaction's origin (UnderwritingReceiver's
+ * receiver that also checks the transaction's origin (the Polaris receivers'
  * simulation transmitter), which an estimate from the forwarder's address
- * cannot satisfy. Only for small reports: see `estimateOnReport` for why a
- * forwarder-level estimate can undershoot a large one.
+ * cannot satisfy: Monad testnet answers that one with
+ * `NotSimulationTransmitter(forwarder)`. This estimate falls short of what
+ * the receiver needs (see `deliveryGas`), so it is never sent as it is:
+ * `gasLimitFor(estimate, gas, "delivery")` lifts it first.
  */
 export function estimateDelivery(
   runtime: Runtime<unknown>,
@@ -166,12 +170,50 @@ export function estimateDelivery(
 }
 
 /**
- * The limit to send with: the estimate, plus `overhead` when the estimate
- * covered `onReport` alone (the forwarder's own work and the intrinsic
- * cost), plus headroom, clamped to [min, max].
+ * Call frames between the delivery transaction and `onReport` in Chainlink's
+ * MockKeystoneForwarder: `report` calls `this.route(...)`, and `route` calls
+ * the receiver inside a try. Read from traces of its deliveries on Monad
+ * testnet (`scripts/report-gas.mjs`).
+ */
+export const FORWARDER_CALL_DEPTH = 2;
+
+/**
+ * What a delivery needs, from `eth_estimateGas` of the whole delivery
+ * (`estimateDelivery`): the estimate × (64/63)^FORWARDER_CALL_DEPTH, rounded
+ * up, about +3.2%.
+ *
+ * Why the estimate alone is short: under EIP-150 a call passes on at most
+ * 63/64 of the gas left, so each frame between the transaction and the
+ * receiver must hold back 1/64 of what it passes on. An estimator that
+ * checks only that the transaction succeeds cannot see that hold-back go
+ * missing, because the forwarder catches the receiver running out of gas
+ * and the transaction still succeeds (`ReportProcessed(..., false)`).
+ * Measured read-only on Monad testnet (workflows/evidence/gas/): every
+ * collections report that collected or liquidated failed at its estimate,
+ * short by 712 gas for one collection up to 17,793 gas (2.07%) for 25
+ * tasks; the shortfall grows with the receiver's work, as the hold-back
+ * does. Lifting the estimate by 64/63 for each of the forwarder's two
+ * frames covers every measured report with 4,001 gas or more to spare
+ * before any headroom (9,729 on the 25-task report), at 3.2% more of the
+ * limit Monad bills. Headroom then covers only what it is for: state that
+ * moves between the estimate and the block.
+ */
+export function deliveryGas(estimate: bigint): bigint {
+  const num = estimate * 64n ** BigInt(FORWARDER_CALL_DEPTH);
+  const den = 63n ** BigInt(FORWARDER_CALL_DEPTH);
+  return (num + den - 1n) / den;
+}
+
+/**
+ * The limit to send with, clamped to [min, max]:
+ *   - "receiver" (an estimate of `onReport` alone, from the forwarder's
+ *     address): the estimate, plus `overhead` (the forwarder's own work and
+ *     the intrinsic cost), plus headroom;
+ *   - "delivery" (an estimate of the whole `forwarder.report(...)`):
+ *     `deliveryGas(estimate)`, plus headroom.
  */
 export function gasLimitFor(estimate: bigint, gas: GasConfig, scope: "receiver" | "delivery" = "receiver"): bigint {
-  const base = scope === "receiver" ? estimate + BigInt(gas.overhead) : estimate;
+  const base = scope === "receiver" ? estimate + BigInt(gas.overhead) : deliveryGas(estimate);
   const raw = (base * BigInt(10_000 + gas.headroomBps)) / 10_000n;
   const min = BigInt(gas.min);
   const max = BigInt(gas.max);

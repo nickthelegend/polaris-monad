@@ -293,7 +293,7 @@ describe("polaris-guardian", () => {
     const seen = fakeChains({ transmitter });
     run();
     expect(seen.estimates).toEqual([{ from: transmitter, to: FORWARDER.toLowerCase() }]);
-    expect(seen.gasLimits[0]).toBe(150_000n); // (121,000 + 15%) under the floor
+    expect(seen.gasLimits[0]).toBe(150_000n); // (121,000 × (64/63)² + 15%) under the floor
   });
 
   test("says so when the owner's override decides, or when the heartbeat outlives the attestation", () => {
