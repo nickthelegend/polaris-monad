@@ -134,6 +134,29 @@ describe("sqlite persistence", () => {
     second.close();
   });
 
+  it("keeps the indexer outbox's cursor across a restart, exactly, past 2^53", async () => {
+    const path = join(dir, "outbox.db");
+    const cursor = (2n ** 60n + 4_00n).toString(); // a decimal string: a Number would round it
+    const at = "2026-10-07T00:00:00.000Z";
+    const first = openSqliteStore(path);
+    await collections(first).indexerOutbox.upsert({
+      id: "activity",
+      cursor,
+      progressBlock: 90,
+      polledAt: at,
+      okAt: at,
+      error: null,
+      errorAt: null,
+      counts: { emitted: 3, duplicates: 1, skipped: 0, rejected: 0 },
+      lastRejected: null,
+      updatedAt: at,
+    });
+    first.close();
+    const second = openSqliteStore(path);
+    expect(await collections(second).indexerOutbox.get("activity")).toMatchObject({ cursor, progressBlock: 90, counts: { emitted: 3, duplicates: 1 } });
+    second.close();
+  });
+
   it("opens by URL", () => {
     expect(openStore("memory:").kind).toBe("memory");
     const s = openStore(`sqlite:${join(dir, "url.db")}`);
