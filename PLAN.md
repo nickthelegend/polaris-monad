@@ -188,8 +188,14 @@ Each task: objective · acceptance · verify · status.
   interaction and integration with its expected result. · DONE (written;
   the runs fill it in)
 - **P4.3 Browser pass** via Claude in Chrome, console and network clean,
-  375 px. · NOT STARTED
-
+  375 px. · R1 DONE (7 Oct): 44 PASS, 6 FAIL, 22 UNTESTED (each with its
+  dependency: the person's Touch ID, Privy origin/test account, `cre login`,
+  Nansen/Zerion keys, the testnet go), 8 F flows covered by the automated
+  run. FAILs (L3 landing link, A13 email copy without Privy, B4 a failed
+  balance read shown as $0, B5 tiles missing fresh payments, B6 clipped row
+  menu, B11 375 px overflow and duplicate ticks) are being fixed (P4.4).
+  375 px ran in Playwright's Chromium (the Chrome window wouldn't resize)
+- **P4.4 Fix R1 and run R2.** · IN PROGRESS
 ### P5 Quality loop
 
 - **P5.1 First gate** on `metropolis/integrate`: 29/29 test, typecheck, lint
