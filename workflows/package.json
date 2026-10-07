@@ -26,6 +26,7 @@
     "chain:local": "node scripts/local-chain.mjs",
     "configure": "node scripts/configure.mjs",
     "payload:underwriting": "node --experimental-strip-types --disable-warning=ExperimentalWarning --conditions=source scripts/underwriting-payload.mjs",
+    "report-gas": "node --experimental-strip-types --disable-warning=ExperimentalWarning --conditions=source scripts/report-gas.mjs",
     "simulate:collections": "node scripts/cre.mjs workflow simulate ./collections --non-interactive --trigger-index 0 --broadcast -T",
     "simulate:underwriting": "node --experimental-strip-types --disable-warning=ExperimentalWarning --conditions=source scripts/underwriting-payload.mjs && node scripts/cre.mjs workflow simulate ./underwriting --non-interactive --trigger-index 0 --http-payload ./underwriting/payload.json --broadcast -T",
     "simulate:guardian": "node scripts/cre.mjs workflow simulate ./guardian --non-interactive --trigger-index 0 --broadcast -T",

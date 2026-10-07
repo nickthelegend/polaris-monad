@@ -1,0 +1,166 @@
+{
+  "rpc": "https://testnet-rpc.monad.xyz",
+  "forwarder": "0xB9F79d863261869B234c481D1f9A7af84AeAd192",
+  "transmitter": "0xBBb420B7e4b0263d053e00bFD363eD7cF21e2EA6",
+  "block": "68920950",
+  "measuredAt": "2026-10-07T08:19:18.318Z",
+  "onReportFromForwarder": "eth_estimateGas: execution reverted 0x3e6d4907000000000000000000000000b9f79d863261869b234c481d1f9a7af84aead192",
+  "rows": [
+    {
+      "label": "replay: collections-retry (collect #1)",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "284318",
+      "needed": "286366",
+      "receiverGas": "204468",
+      "events": "TaskExecuted, CollectionsRun",
+      "deliveredAtEstimate": false,
+      "sentLimit": "326965"
+    },
+    {
+      "label": "replay: collections (collect #1, liquidate #1)",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "275796",
+      "needed": "276515",
+      "receiverGas": "195724",
+      "events": "TaskExecuted ×2, CollectionsRun",
+      "deliveredAtEstimate": false,
+      "sentLimit": "317165"
+    },
+    {
+      "label": "replay: guardian (first)",
+      "receiver": "0x4c99136634F670cd59E73fc284fED164C662e3Df",
+      "estimate": "291988",
+      "needed": "293068",
+      "receiverGas": "210983",
+      "events": "CreditGuardUpdated",
+      "deliveredAtEstimate": false,
+      "sentLimit": "335786"
+    },
+    {
+      "label": "collections: collect #2 (due)",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "252016",
+      "needed": "252728",
+      "receiverGas": "171617",
+      "events": "TaskExecuted, CollectionsRun",
+      "deliveredAtEstimate": false
+    },
+    {
+      "label": "collections: collect #2, liquidate #2",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "276594",
+      "needed": "277307",
+      "receiverGas": "195724",
+      "events": "TaskExecuted ×2, CollectionsRun",
+      "deliveredAtEstimate": false
+    },
+    {
+      "label": "collections: charge #1 (not due: skipped)",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "125078",
+      "needed": "125076",
+      "receiverGas": "46722",
+      "events": "TaskSkipped, CollectionsRun",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "collections: collect #1 (not due: skipped)",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "124955",
+      "needed": "124953",
+      "receiverGas": "46612",
+      "events": "TaskSkipped, CollectionsRun",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "collections: 3 × collect #2 (three instalments due)",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "324958",
+      "needed": "326814",
+      "receiverGas": "243358",
+      "events": "TaskExecuted ×3, CollectionsRun",
+      "deliveredAtEstimate": false
+    },
+    {
+      "label": "collections: 25 tasks: 3 × collect #2, then 22 skips",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "698188",
+      "needed": "710696",
+      "receiverGas": "608929",
+      "events": "TaskExecuted ×3, TaskSkipped ×22, CollectionsRun",
+      "deliveredAtEstimate": false
+    },
+    {
+      "label": "collections: 25 tasks: 22 skips, then 3 × collect #2",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "860097",
+      "needed": "877890",
+      "receiverGas": "770928",
+      "events": "TaskSkipped ×22, TaskExecuted ×3, CollectionsRun",
+      "deliveredAtEstimate": false
+    },
+    {
+      "label": "collections: 8 tasks: collect #2, liquidate #2, 6 skips",
+      "receiver": "0x4201C0837f3bB4e0E1A982C5666BF00b5EE145CC",
+      "estimate": "387244",
+      "needed": "390542",
+      "receiverGas": "303709",
+      "events": "TaskExecuted ×2, TaskSkipped ×6, CollectionsRun",
+      "deliveredAtEstimate": false
+    },
+    {
+      "label": "underwriting: a new buyer",
+      "receiver": "0x523e9791d0e324525F66F91b21B478C18e284a19",
+      "estimate": "189457",
+      "needed": "188855",
+      "receiverGas": "108082",
+      "events": "UnderwritingApplied",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "underwriting: a new buyer with a linked wallet",
+      "receiver": "0x523e9791d0e324525F66F91b21B478C18e284a19",
+      "estimate": "229284",
+      "needed": "228992",
+      "receiverGas": "147344",
+      "events": "UnderwritingApplied",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "underwriting: a thin file (refused)",
+      "receiver": "0x523e9791d0e324525F66F91b21B478C18e284a19",
+      "estimate": "137154",
+      "needed": "136141",
+      "receiverGas": "56227",
+      "events": "UnderwritingRefused",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "guardian: a healthy attestation (a new round)",
+      "receiver": "0x4c99136634F670cd59E73fc284fED164C662e3Df",
+      "estimate": "189989",
+      "needed": "189397",
+      "receiverGas": "108983",
+      "events": "CreditGuardUpdated",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "guardian: a depeg pause (a new round)",
+      "receiver": "0x4c99136634F670cd59E73fc284fED164C662e3Df",
+      "estimate": "189707",
+      "needed": "189112",
+      "receiverGas": "108679",
+      "events": "CreditGuardUpdated",
+      "deliveredAtEstimate": true
+    },
+    {
+      "label": "guardian: out of order (refused)",
+      "receiver": "0x4c99136634F670cd59E73fc284fED164C662e3Df",
+      "estimate": "134619",
+      "needed": "133591",
+      "receiverGas": "54049",
+      "events": "AttestationRefused",
+      "deliveredAtEstimate": true
+    }
+  ]
+}

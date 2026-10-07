@@ -8,6 +8,7 @@ Monad testnet. Nothing here is written by hand.
 |---|---|---|
 | `<UTC date>/` | `pnpm --filter @polaris/cre-workflows evidence` (`--retry-tx <hash>` adds the log trigger) | One `simulate --broadcast` run per workflow (collections, underwriting, guardian) and `collections-retry` for collections' EVM log trigger on a real `reauthorize`: `<run>-<time>.log`, `runs.json`, `README.md` (the table: outcome, transaction, block, the forwarder's `ReportProcessed` result), `supported-chains.txt` |
 | `loop/` | `collections:loop`, `guardian:loop`, `retry:listen` | `polaris-collections` every minute for the demo: `<date>.log` (each run's output) and `<date>.jsonl` (one line per run: outcome, tasks, what the dunning ladder held back, transaction); `polaris-guardian` in `<date>-guardian.log` / `.jsonl` (the verdict, the round written); the live log trigger in `<date>-retry.log` / `.jsonl` |
+| `gas/` | `pnpm --filter @polaris/cre-workflows report-gas --json evidence/gas/<UTC date>.json` | Read-only (`eth_estimateGas`, `debug_traceCall`; nothing signed or sent): for each report, Monad testnet's estimate of the delivery against the smallest gas limit at which the receiver ran to its end, with the receiver's events; the three 28 Sep deliveries replayed at their parent blocks. What `src/shared/evm.ts` `deliveryGas` is sized from ([`../README.md`](../README.md#report-gas-on-monad-testnet)) |
 
 A run that sent nothing (nothing due, a thin file, a guardian with nothing
 new to attest, a dry run) is recorded as such. A run whose config differed
