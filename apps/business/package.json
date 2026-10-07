@@ -18,6 +18,7 @@
     "privy:setup-relayer": "node scripts/privy/setup-relayer.mjs",
     "privy:setup-payouts": "node scripts/privy/setup-payouts.mjs",
     "privy:prove-policy": "node scripts/privy/prove-policy.mjs",
+    "privy:update-relayer-policy": "node scripts/privy/update-relayer-policy.mjs",
     "privy:smoke": "node scripts/privy/smoke-monad.mjs",
     "privy:smoke:harness": "node scripts/privy/smoke-harness.mjs",
     "privy:fund": "node scripts/privy/fund-testnet.mjs",
