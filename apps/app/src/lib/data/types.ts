@@ -25,7 +25,11 @@ export type Person = {
   address?: Address;
 };
 
-export type Profile = { name: string; memberSince: number };
+/**
+ * `memberSince` is when the account was made on this device or first seen on
+ * chain, in ms; null when neither is known (no account yet): never invented.
+ */
+export type Profile = { name: string; memberSince: number | null };
 
 export type Balance = {
   /** Spendable dollars, base units (6 decimals). */

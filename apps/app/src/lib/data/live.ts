@@ -406,7 +406,7 @@ export const liveData: PolarisData = {
     const created = accountCreatedAt(owner);
     const seen = owner ? await book(owner).then(firstSeen, () => null) : null;
     const known = [created, seen].filter((t): t is number => t !== null);
-    return { name: prefsName(), memberSince: known.length ? Math.min(...known) : Date.now() };
+    return { name: prefsName(), memberSince: known.length ? Math.min(...known) : null };
   },
 
   async getBalance(owner): Promise<Balance> {

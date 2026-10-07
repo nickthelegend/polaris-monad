@@ -93,7 +93,9 @@ function CardsPhone() {
           { label: "Currency", value: "US dollars" },
           { label: "Pay later limit", value: credit ? usd(credit.limit, { trim: true }) : "…" },
           { label: "Interest", value: credit ? `${credit.aprBps / 100}% a year` : "…" },
-          { label: "Since", value: profile.value ? monthYear(profile.value.memberSince) : "…" },
+          ...(profile.value?.memberSince === null
+            ? []
+            : [{ label: "Since", value: profile.value ? monthYear(profile.value.memberSince) : "…" }]),
         ]}
       />
     </TabScreen>

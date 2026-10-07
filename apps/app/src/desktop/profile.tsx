@@ -24,7 +24,7 @@ import { useAccounts } from "@/components/accounts";
 import { ReceiptsPrivacyRow } from "@/components/receipts-privacy";
 import { photoFor } from "@/components/avatars";
 import { useNotices } from "@/components/use-notices";
-import { DEV_SIGNER, signIn, signOut } from "@/lib/account";
+import { DEV_SIGNER, EMAIL_LOGIN, signIn, signOut } from "@/lib/account";
 import { useAccountState, useOwner, usePrivyStatus } from "@/lib/account/hooks";
 import { getPlans, getProfile } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
@@ -35,7 +35,14 @@ import { n } from "@/lib/view";
 import { PageCoin, PageGrid, PageHead, SectionTitle, SideNote } from "./bits";
 
 const HOW: { icon: ReactNode; tone: "lime" | "purple" | "teal" | "orange"; title: string; body: string }[] = [
-  { icon: <ScanFace />, tone: "lime", title: "Your account is your Face ID", body: "No password, nothing to write down. Or use your email: the same account on any device." },
+  {
+    icon: <ScanFace />,
+    tone: "lime",
+    title: "Your account is your Face ID",
+    body: EMAIL_LOGIN
+      ? "No password, nothing to write down. Or use your email: the same account on any device."
+      : "No password, nothing to write down.",
+  },
   { icon: <WalletCards />, tone: "purple", title: "Pay now, in four, or every month", body: "Pay in 4 shows every payment and the total interest before you confirm." },
   { icon: <Link2 />, tone: "teal", title: "Send dollars with a link", body: "Share it anywhere. Whoever opens it gets the dollars in under a second." },
   { icon: <ShieldCheck />, tone: "orange", title: "Only you can move your money", body: "Every payment needs your confirmation. Polaris covers the cost of every payment." },
@@ -82,7 +89,7 @@ export function ProfileDesktop() {
                     ? "No account on this device yet. Create yours in a second."
                     : source === "privy" && email
                       ? email
-                      : profile.value
+                      : profile.value?.memberSince
                         ? `Since ${monthYear(profile.value.memberSince)}`
                         : " "}
                 </p>
@@ -142,7 +149,9 @@ export function ProfileDesktop() {
                 stats={[
                   { label: "Score", value: credit.score },
                   { label: "Plans", value: plans.value.plans.filter((p) => p.status === "active").length },
-                  { label: "Since", value: profile.value ? monthYear(profile.value.memberSince) : "…" },
+                  ...(profile.value?.memberSince === null
+                    ? []
+                    : [{ label: "Since", value: profile.value ? monthYear(profile.value.memberSince) : "…" }]),
                 ]}
               />
             ) : (

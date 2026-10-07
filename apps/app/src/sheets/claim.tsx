@@ -25,6 +25,7 @@ import { ConfirmSheet } from "@/components/confirm-sheet";
 import { LocalEquivalent } from "@/components/local-equivalent";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
 import { SuccessSheet } from "@/components/success-sheet";
+import { EMAIL_LOGIN } from "@/lib/account";
 import { claimLink } from "@/lib/actions";
 import { getSendLink } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
@@ -164,7 +165,7 @@ function ClaimReady({ parsed, onDone }: { parsed: { key: Hex; amount: Micros; na
         <LocalEquivalent amount={amount} className="-mt-1 text-center text-[14px]" />
 
         <ListGroup>
-          <ListRow icon={<ScanFace />} title="Face ID is your account" description="No password, no forms. Or use your email." />
+          <ListRow icon={<ScanFace />} title="Face ID is your account" description={EMAIL_LOGIN ? "No password, no forms. Or use your email." : "No password, no forms."} />
           <ListRow icon={<Globe />} title="Dollars, wherever you are" description="Hold them, pay with them, send them on." />
           <ListRow icon={<Zap />} title="No network fee to claim" description="Polaris pays it. It lands in under a second." />
         </ListGroup>
