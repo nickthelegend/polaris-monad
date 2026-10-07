@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type HTMLAttributes, type KeyboardEvent, t
 import { cn } from "../lib/cn";
 import { useControllable } from "../lib/hooks";
 import { niceTicks, roundTimes, useSize } from "./geometry";
+import { tickDecimals } from "./ticks";
 
 export type Candle = {
   /** The period: an ISO date, a timestamp or a label. */
@@ -35,7 +36,7 @@ export type CandlestickChartProps = Omit<HTMLAttributes<HTMLDivElement>, "childr
   /** Shows ref C's candles button at the right of the chip row. */
   onTypeToggle?: () => void;
   formatPrice?: (v: number) => string;
-  /** The price axis's labels; defaults to the bare number ("1400"). */
+  /** The price axis's labels; defaults to the bare number at the axis's own precision ("1400", "0.5, 1.0, 1.5"). */
   formatAxis?: (v: number) => string;
   /** The price axis's width in px: room for its labels and the price tags. */
   axisWidth?: number;
@@ -93,7 +94,7 @@ export function CandlestickChart({
   leading,
   onTypeToggle,
   formatPrice = (v) => v.toFixed(2),
-  formatAxis = (t) => String(Number.isInteger(t) ? t : t.toFixed(1)),
+  formatAxis,
   axisWidth: AXIS_W = 52,
   formatTime = defaultTime,
   timeAxis = false,
@@ -137,6 +138,8 @@ export function CandlestickChart({
   const y = (v: number) => top + (areaH - top - bottom) * (1 - (v - lo) / (hi - lo));
   const priceAt = (py: number) => lo + (1 - (py - top) / (areaH - top - bottom)) * (hi - lo);
   const ticks = n ? niceTicks(lo, hi, 6).filter((t) => t > lo && t < hi) : [];
+  const axisDecimals = tickDecimals(ticks);
+  const axisLabel = formatAxis ?? ((t: number) => t.toFixed(axisDecimals));
   const vEvery = Math.max(1, Math.round(n / 6));
 
   const tagYs = [last != null ? y(last) : null, reference ? y(reference.value) : null].filter((v): v is number => v !== null);
@@ -288,7 +291,7 @@ export function CandlestickChart({
                   fontSize="13"
                   className="ui-figure"
                 >
-                  {formatAxis(t)}
+                  {axisLabel(t)}
                 </text>
               ),
             )}
