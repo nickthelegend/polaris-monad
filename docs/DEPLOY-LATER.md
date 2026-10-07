@@ -21,6 +21,7 @@ the git-ignored file or the platform variable named below.
 | Hosting | Polaris for Business on Railway (https://business-production-c0b6.up.railway.app), the app (https://polaris-monad-app.vercel.app) and the landing page (https://polaris-monad-landing.vercel.app) on Vercel; `pnpm deploy:check` passes for those three. The shop is not deployed |
 | Stablecoin | A labelled MockAUSD. Real AUSD is rehearsed on a local fork (block 4) |
 | PolarisSplit | Not on testnet (block 2) |
+| CollateralVault | Testnet's (`0xC2F0…23dc`, from `20518d2`) takes `lockWithPermit` but not `withdrawWithSig`, so *Take out of Boost* is local only; the relayer and the app say so on testnet (block 2b) |
 | Envio | Indexer built and tested; not deployed (block 5) |
 
 Keep the Vercel projects deploying from a clean export, never the working
@@ -86,6 +87,86 @@ the split to the SDK presets
 `/api/public/network` serves the split address and the app shows Split; run
 `pnpm demo:e2e:split` locally once more; update the README's deployment
 table, `docs/submission/bounty-fields.md` (Agora), and `pnpm docs:check`.
+
+## 2b. CollateralVault with withdraw-by-signature (testnet redeploy, on go) Claude, then 🔑
+
+*Take out of Boost* needs `CollateralVault.withdrawWithSig`: a buyer holds no
+MON, and the deployed vault's `withdraw` pays only its caller. Today's vault
+has it (built and proven on the local fork: `demo:e2e`, [`TEST-PLAN-ZERO-MOCK.md`](TEST-PLAN-ZERO-MOCK.md)
+F16). Testnet keeps the frozen vault until the team says go; until then the
+relayer answers `withdraw_unavailable` and the app says "Taking them out isn't
+available on this network yet."
+
+**What moves.** One contract: a new CollateralVault, and the vault pointer in
+ScoreManager and in PolarisLoanEngine. Five transactions from the deployer
+(the deploy, `setLoanEngine`, `setSeizer(loan engine)`,
+`ScoreManager.setCollateralVault`, `PolarisLoanEngine.setCollateralVault`;
+`setCreditMultiplierBps` only if the old vault's multiplier isn't the default
+150%). The deploy measured about 1.43M gas locally (the vault it replaces used
+1.10M on testnet), each wiring call well under 100k; the script prints its own
+estimate and refuses to start short of MON. No role for the relayer:
+`withdrawWithSig` is open to anyone, the signature is the consent.
+
+**What doesn't move: existing locks.** Nothing is migrated, and nothing can be:
+the vault can only pay a position to its owner. The old vault stays on chain;
+whatever is locked there stays withdrawable there by its owner's own
+`withdraw` transaction (which needs MON), no longer counts toward a limit, and
+can no longer be seized. On 7 Oct each of the two earlier vaults
+(`0xC2F0…23dc` and `0xD0e7…3E72`) held $202.00 of the labelled MockAUSD, locked
+by `smoke:testnet` buyers whose throwaway keys were not kept: nobody will take
+those out. No real user funds are involved.
+
+Steps:
+
+1. **Rehearsed** (no fork run of testnet's own deployment: a fork can't sign
+   as the testnet deployer): `test/metropolis/RedeployVault.test.js` rebuilds
+   the vault testnet runs (`20518d2`) from git, puts it in a deployment with a
+   lock in it, replaces it with `lib/redeploy.js`, and checks that the record
+   gains `eip712.CollateralVault`, a borrower locks and takes out on the new
+   vault with no MON, the old lock is still withdrawable by its owner only,
+   and the deployment reads back clean.
+2. Claude, on go, with `contracts/` committed at the commit to deploy:
+
+   ```bash
+   REDEPLOY_WHY="withdrawWithSig: take out of Boost with no MON" pnpm --filter @polarispay/contracts redeploy-vault:monad
+   pnpm --filter @polarispay/contracts check:deployment:monad            # 65 of 65: both vault pointers, the vault's engine and seizer
+   VERIFY_DRY_RUN=1 pnpm --filter @polarispay/contracts verify:monad     # the new vault from today's sources, both replaced vaults from their commits
+   ETHERSCAN_API_KEY=… pnpm --filter @polarispay/contracts verify:monad  # the key is in the root .env
+   ```
+
+   It writes `monad-testnet.json` (the new address, `sourceCommit`,
+   `eip712.CollateralVault`, a `redeploys` entry) and appends the five
+   transactions to `monad-testnet.transactions.json`; commit both and
+   `monad-testnet.verification.json`.
+3. 🔑 **The Privy relayer policy.** Every vault rule in the live policy pins
+   the vault's address, so after the redeploy **Add to Boost stops working on
+   testnet** until this is done. The team puts the admin key quorum's key back
+   in `apps/business/.privy-admin.key` for this run only:
+
+   ```bash
+   pnpm --filter @polaris/business privy:update-relayer-policy            # dry run: the rules, with the new vault and withdrawWithSig
+   pnpm --filter @polaris/business privy:update-relayer-policy -- --apply # replaces the live policy's rules in place (same id, wallet, owner)
+   pnpm --filter @polaris/business privy:show                             # the live policy, rule by rule
+   pnpm --filter @polaris/business privy:prove-policy -- --run            # now also: withdrawWithSig of $0.10 signed, of 0 and withdraw() refused
+   ```
+
+   then delete the key file. `privy:update-relayer-policy` is new and has run
+   only as a dry run (no Privy credentials here); its `--apply` calls Privy's
+   policy update signed by the admin key quorum.
+4. Everything that pins the vault's address: the SDK presets
+   (`pnpm --filter polarispay-sdk gen:deployments`), the indexer
+   (`node packages/indexer/scripts/generate.mjs`; the start block doesn't
+   move; it already indexes the vault's `NonceInvalidated`), and, if Envio is
+   deployed by then (block 5), a redeploy of the indexer. No test or env
+   example pins the vault's address.
+5. Redeploy Business (`railway up --detach`; the image carries the record) and
+   the app (Vercel, from a clean export: it has the Take out sheet). The
+   relayer reads the new vault's `eip712Domain()` and starts carrying
+   `withdrawCollateral`; the app reads the same and offers Take out.
+6. Check by hand on the hosted app with a fresh account: Add $1 to Boost, Take
+   $1 out; the relayer's two transactions on Monadscan, the account at 0 MON.
+   Then the README's deployment table, `docs/submission/` (the vault's address
+   and the redeploy), and `pnpm docs:check`.
 
 ## 3. The demo video (≈ 2 h) 🔑
 

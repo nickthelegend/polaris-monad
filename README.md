@@ -166,7 +166,10 @@ line is **Add to Boost** (the app's Credit page, the Credit line's Boost row,
 or the Boost card in Select account): one Face ID locks dollars in
 `CollateralVault`, and the line rises with them (at face value for an account
 the CRE workflow hasn't underwritten, up to 1.5× once it has), so Pay in 4
-then opens against it. The shop's order is marked paid by
+then opens against it. Once nothing is owed, **Take out of Boost** (the same
+sheet) brings the dollars back with one Face ID, relayed to
+`CollateralVault.withdrawWithSig`: on the local stack; Monad testnet's vault
+predates it and the app says so ([`docs/DEPLOY-LATER.md`](docs/DEPLOY-LATER.md), block 2b). The shop's order is marked paid by
 the Polaris webhook, and the merchant dashboard at
 http://localhost:3100/dashboard shows the payment and any plan; a payment by a
 buyer with a Face ID inbox reads "Sealed for the buyer" there. Before it prints its URLs, `demo:local` opens every

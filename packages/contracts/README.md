@@ -52,6 +52,7 @@ Then, as needed:
 | `RELAYER_ADDRESS=0x… grant-relayer:monad` | The Privy relayer wallet exists: gives it PolarisPayments and MerchantRegistry operator and BatchSettlement settler. |
 | `ETHERSCAN_API_KEY=… verify:monad` | Verify every contract on Monadscan (Etherscan V2 API, `chainid` 10143 on every call; `lib/monadscan.js`), and the ones a redeploy replaced, each from the sources that built it: today's when they reproduce its code, else those of the commit the record names (`sourceCommit`), rebuilt from git and checked against the chain first (and that commit's too when today's differ only in comments and it gives the exact bytes, so the explorer shows the text deployed), cut down to the files it is built from (`lib/verify.js`). Constructor arguments are read from each creation transaction and checked against the record. Writes `deployments/monad-testnet.verification.json` (address, name, verified, explorer link, compiler) from what the explorer says. `VERIFY_DRY_RUN=1` checks all of them with no key and no submission; `VERIFY_ONLY=A,B` submits some. Done on 28 Sep 2026: 13 of 13 verified, every one an exact match. |
 | `redeploy-guardian:monad` | Replace GuardianReceiver alone with today's code and point PolarisCheckout's credit guard at it (`lib/redeploy.js`); refuses unless the deployer owns PolarisCheckout, the receiver is not already today's code, `contracts/` is committed and the MON is there. Writes the record (with a `redeploys` entry) and appends to `monad-testnet.transactions.json`. |
+| `redeploy-vault:monad` | Replace CollateralVault alone with today's code and point ScoreManager and the loan engine at it (`lib/redeploy.js`); the new vault gets the old one's multiplier, the loan engine as engine and seizer, and the record gains `eip712.CollateralVault`. Refuses unless the deployer owns both, the vault is not already today's code, `contracts/` is committed and the MON is there. Run once on 28 Sep 2026 (for `lockWithPermit`). Today's vault adds `withdrawWithSig`; that redeploy is **not run** (the testnet contracts are frozen; [`docs/DEPLOY-LATER.md`](../../docs/DEPLOY-LATER.md) has the steps). |
 | `deploy-split:monad` | Add PolarisSplit (split-the-bill links) to a deployment that predates it, such as testnet's of 28 Sep 2026: one transaction (1.89M gas measured locally), nothing else moves (`lib/split.js`). Refuses mainnet, a record that already has one, uncommitted `contracts/`, and a deployer short of MON. Writes the record (`contracts.PolarisSplit`, `eip712.PolarisSplit`, an `additions` entry) and appends to `monad-testnet.transactions.json`. **Not run yet.** A fresh `deploy:monad` or `deploy:local` includes PolarisSplit already; `deploy-split:local` does the same on a local node. |
 | `check:monad` | Read-only live check of AUSD, the forwarders, Multicall3 and gas. |
 | `guardian:monad` | The credit guard's status (paused, why and from where, stale, override and until when, thresholds, the acknowledged bad debt, the latest attestation). `GUARD_ACTION=thresholds` sets the `GUARD_*` thresholds (the defaults for any unset; `GUARD_MIN_PRICE=1.001` is the demo's raised peg, decision 28, and applies at once), `GUARD_ACTION=override GUARD_OVERRIDE=pause\|resume\|none` (a resume lasts `GUARD_RESUME_SECONDS`, 3600 by default, at most a day), `GUARD_ACTION=acknowledge` (only bad debt beyond today's counts), `GUARD_ACTION=max-age GUARD_MAX_ATTESTATION_AGE_SECONDS=…`. |
@@ -156,7 +157,8 @@ headroom.
 | `PolarisSend` | Send dollars as a link; claim to any address with the link key's signature. |
 | `PolarisSplit` | Split the bill by link: the organiser opens a split of named or equal shares; each friend pays exactly their share by ERC-3009, straight on to the organiser; the organiser can close it. No owner, no fee, no custody. **Not on Monad testnet yet** (`deploy-split:monad`, below). |
 | `MerchantRegistry` | Merchants, registered by their own signature (`registerFor`), activated with a cap. |
-| `CollateralVault`, `BatchSettlement` | Secured credit; batch payouts with memos. |
+| `CollateralVault` | Secured credit (Boost): `lockWithPermit` and `withdrawWithSig`, both relayed, so a borrower never holds MON. Nothing leaves while any debt is outstanding. Monad testnet's vault predates `withdrawWithSig` (below). |
+| `BatchSettlement` | Batch payouts with memos. |
 | `cre/CollectionsReceiver` | CRE `polaris-collections` (cron): collects, charges, liquidates in a batch. |
 | `cre/UnderwritingReceiver` | CRE `polaris-underwrite` (HTTP): facts → `ScoreManager.underwrite`. |
 | `cre/GuardianReceiver` | CRE `polaris-guardian` (cron): Chainlink AUSD/USD (Monad mainnet) + pool state → the credit guard `openPlan` asks; pool health as an `AggregatorV3Interface` feed. |
@@ -263,6 +265,40 @@ authorization) bubble up unchanged. Events: `SplitCreated(splitId, organiser,
 total, amounts, expiresAt, memoHash)`, `SharePaid(splitId, index, payer,
 amount, paidCount, shareCount)`, `SplitClosed(splitId, organiser, paidCount,
 shareCount)`.
+
+### CollateralVault
+
+Boost: dollars a borrower locks to raise their limit (`ScoreManager.creditLimitOf` adds `creditBoostOf`,
+`lockedOf × creditMultiplierBps / 10000`, at face value for an account with no unsecured line).
+
+| Function | Who signs | Notes |
+|---|---|---|
+| `lockWithPermit(borrower, amount, deadline, v, r, s)` | the borrower: AUSD `Permit`, spender = **the vault**, value = `amount` | Locked into the borrower's own position. Not wrapped in try/catch: no standing allowance is ever used without a fresh signature. |
+| `withdrawWithSig(borrower, amount, deadline, bytes signature)` | the borrower: `Withdraw` (below) | Pays `borrower`, never the caller, by exactly `withdraw`'s rules (one internal path): nothing while `loanEngine.activeDebtOf(borrower) > 0` (`DebtOutstanding(debt)`), never more than `lockedOf` (`InsufficientCollateral`), never zero (`ZeroAmount`); emits `CollateralWithdrawn(user, amount, newTotal)`; `nonReentrant`. |
+| `lock(amount)`, `withdraw(amount)` | | The caller's own position, for an account that holds MON. |
+| `withdrawable(user)` | | What either withdrawal allows now: all of `lockedOf`, or 0 while any debt is outstanding. |
+| `nonces(borrower)`, `invalidateNonce()`, `withdrawDigest(borrower, amount, nonce, deadline)`, `DOMAIN_SEPARATOR()`, `eip712Domain()` | | One sequential nonce per borrower: a signature is spent once and a newer one retires every older one. `invalidateNonce` (emits `NonceInvalidated(borrower, nonce)`) cancels one for a borrower who holds gas. |
+| `seize(user, amount, to)` | | A registered seizer (the loan engine) on default. |
+
+EIP-712 domain `{ name: "CollateralVault", version: "1", chainId, verifyingContract }`:
+
+```
+Withdraw(address borrower,uint256 amount,uint256 nonce,uint256 deadline)
+```
+
+`nonce` is `nonces(borrower)`; `deadline` must be at most `MAX_SIGNATURE_WINDOW` (1 hour) ahead of the
+block. Signatures are checked as PolarisCheckout checks them: the borrower's key first, then ERC-1271 for
+an account with code. Errors: `InvalidSignature` (wrong signer, amount, deadline, vault or chain, a spent
+or future nonce), `SignatureExpired`, `SignatureWindowTooLong`, and `withdraw`'s own. The domain is built
+from immutables rather than OpenZeppelin's `EIP712` (whose fallback strings are storage), so every storage
+slot of the earlier vault keeps its place and `nonces` comes after them (pinned by a test).
+
+**Monad testnet runs the vault from `20518d2`** (`lockWithPermit`, no `withdrawWithSig`; it answers no
+`eip712Domain()`), and the testnet contracts are frozen. The relayer and the app read the vault itself:
+there, the relayer answers `withdraw_unavailable` and the app says taking out isn't available on this
+network yet. `verify:monad` still verifies it from its `sourceCommit`; `redeploy-vault:monad` replaces it
+on the team's go ([`docs/DEPLOY-LATER.md`](../../docs/DEPLOY-LATER.md)). Every local and fork deployment
+(`deploy:local`, `deploy:fork`, `demo:local`) has today's vault.
 
 ### Chainlink CRE receivers
 
@@ -392,8 +428,14 @@ replayed authorization, create or close, and every expiry: the split's, the auth
 create's and a close's; a token that short-delivers or reenters), `DeploySplit.test.js`
 (PolarisSplit in a fresh deployment, and added to one that predates it with nothing else moving),
 `Deploy.test.js` (every role the deployment grants), `Interfaces.test.js` (ABIs and EIP-712 types
-stay true), `Verify.test.js` (the deploy commit's PolarisCheckout rebuilt from git and told from
-today's), `Redeploy.test.js` (the guardian replaced and read back).
+stay true), `CollateralWithdraw.test.js` (taking collateral out by signature: paid to the borrower and
+never the relayer, a wrong signer, amount, deadline, vault or borrower, a replay, a newer signature and
+`invalidateNonce` retiring an older one, an expired or too-long deadline, refused while a loan is open and
+paid once it is repaid, more than is locked, zero, after a seizure, an ERC-1271 account, a token that
+reenters, and the storage layout of the earlier vault kept), `CollateralPermit.test.js` (locking by permit), `Verify.test.js` (the deploy commit's PolarisCheckout rebuilt from git and told from
+today's), `Redeploy.test.js` (the guardian replaced and read back), `RedeployVault.test.js` (the deploy commit's
+vault and the one testnet runs today, each rebuilt from git and replaced: a borrower locks and takes out
+with no MON, the old vault's lock stays withdrawable only by its owner, the deployment reads back).
 
 ## Attribution
 
