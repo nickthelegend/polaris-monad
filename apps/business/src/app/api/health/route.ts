@@ -3,6 +3,7 @@ import { getConfig, productionProblems } from "@/server/env";
 import { ok, methodNotAllowed } from "@/server/http";
 import { privyServerConfig } from "@/server/privy";
 import { getRelayerAccount } from "@/server/relayer/signer";
+import { outboxHealth } from "@/server/webhooks/outbox";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +16,20 @@ export const dynamic = "force-dynamic";
  * weak spots ("POLARIS_KEY_PEPPER is not set"), so the list goes only to
  * the operator (`Authorization: Bearer <CRON_SECRET>`); everyone else sees
  * whether production is ready (the details are also logged at startup).
+ *
+ * `webhooks` says where live events come from: the chain sync alone, the
+ * Envio indexer's outbox (POLARIS_INDEXER_URL) with the chain sync as backup,
+ * or `fallback` when the indexer is configured but its last read failed.
+ * That last case is also on the problem list. It is read from the store (the
+ * outbox reader's last attempt), never by calling the indexer here, and it
+ * doesn't make production unready: webhooks still go out.
  */
 export const GET = withPublic(async (req) => {
   const config = getConfig();
   const relayer = await getRelayerAccount().catch(() => null);
-  const problems = productionProblems(config);
+  const configProblems = productionProblems(config);
+  const outbox = await outboxHealth().catch(() => null);
+  const problems = outbox?.problem ? [...configProblems, outbox.problem] : configProblems;
   return ok({
     ok: config.chain !== null && relayer !== null,
     chain: config.chain ? { id: config.chain.id, name: config.chain.name, contracts: config.chain.contracts } : null,
@@ -30,7 +40,16 @@ export const GET = withPublic(async (req) => {
     checkoutOrigin: config.checkoutOrigin,
     publicUrl: config.publicUrl,
     appOrigins: config.appOrigins,
-    productionReady: problems.length === 0,
+    productionReady: configProblems.length === 0,
+    webhooks: outbox
+      ? {
+          source: outbox.mode,
+          indexer:
+            outbox.mode === "chain-sync"
+              ? null
+              : { reachable: outbox.okAt === null && outbox.polledAt === null ? null : outbox.mode === "indexer", cursor: outbox.cursor, progressBlock: outbox.progressBlock, polledAt: outbox.polledAt, okAt: outbox.okAt, counts: outbox.counts },
+        }
+      : null,
     build: buildFlags(config),
     ...(hasCronSecret(req) ? { problems } : {}),
   });

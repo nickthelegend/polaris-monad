@@ -5,9 +5,11 @@ import { runUnderwritingQueue } from "./credit/underwriting";
 import { reconcileRelays, syncChain } from "./ingest/sync";
 import { runPayoutSweep } from "./payouts/payouts";
 import { dispatchDue } from "./webhooks/dispatcher";
+import { outboxConfigured, pollIndexerOutbox } from "./webhooks/outbox";
 
 /**
- * The background work: follow the chain, finish relays whose receipt came
+ * The background work: follow the chain, read the Envio indexer's webhook
+ * outbox (when POLARIS_INDEXER_URL is set), finish relays whose receipt came
  * late, deliver and retry webhooks, and run automatic payouts.
  *
  * On a long-running server (`next start`, `next dev`) `startWorkers` runs
@@ -30,6 +32,8 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T | { error:
 export async function runTick(): Promise<TickSummary> {
   const chain = getConfig().chain !== null;
   return {
+    // The indexer's outbox first: an event both paths see goes out as the indexer's, the chain sync then finds it sent.
+    outbox: outboxConfigured() ? await step("indexer outbox", () => pollIndexerOutbox()) : "not configured",
     chain: chain ? await step("chain sync", () => syncChain()) : "not configured",
     relays: chain ? await step("relay reconcile", () => reconcileRelays()) : "not configured",
     webhooks: await step("webhooks", () => dispatchDue({ limit: 100 })),
@@ -53,6 +57,7 @@ export function startWorkers(): void {
       { name: "payouts", everyMs: 5 * 60_000, run: () => runPayoutSweep() },
       { name: "underwriting", everyMs: 5_000, run: () => runUnderwritingQueue() },
     );
+    if (outboxConfigured()) loops.push({ name: "indexer outbox", everyMs: 2_000, run: () => pollIndexerOutbox() });
   }
   g.__polarisWorkers = loops.map((loop) => {
     let busy = false;

@@ -9,6 +9,7 @@ import {
   type WebhookDeliveryRecord,
   type WebhookEventRecord,
   type WebhookEventType,
+  type WebhookSource,
 } from "@polaris/db";
 
 import { getDb } from "../db";
@@ -19,10 +20,12 @@ import { kickDispatcher } from "./dispatcher";
  * that subscribed to its type.
  *
  * Every live event comes from a chain log the server has seen (a relayed
- * transaction's receipt, or the chain sync), never from a browser. Its id is
- * derived from that log (`sourceKey`), so seeing the same log twice (the
- * receipt and then the sync) can't send the event twice: the second insert
- * finds the first.
+ * transaction's receipt, or the chain sync) or from the Envio indexer's
+ * `Activity` outbox for that same log (./outbox.ts), never from a browser.
+ * Its id is derived from that log (`sourceKey`), so seeing the same log
+ * twice (the receipt, the sync, the outbox) can't send the event twice: the
+ * first insert wins and the others find it. Each event and its deliveries
+ * record which source got there first.
  */
 
 export type EmitInput = {
@@ -33,6 +36,8 @@ export type EmitInput = {
   sourceKey?: string;
   /** Only this endpoint (the dashboard's "Send test event"). */
   endpointId?: string;
+  /** What fed it: the chain sync unless said (a test event is always "test"). */
+  source?: Exclude<WebhookSource, "test">;
   now?: Date;
 };
 
@@ -44,6 +49,7 @@ export async function emitEvent(input: EmitInput): Promise<{ event: WebhookEvent
   const db = getDb();
   const now = input.now ?? new Date();
   const test = input.sourceKey === undefined;
+  const source: WebhookSource = test ? "test" : (input.source ?? "chain");
   const id = test ? newId("evt", 24) : eventIdFor(input.sourceKey as string);
   const createdAt = now.toISOString();
   const body = serializeEvent({
@@ -64,6 +70,7 @@ export async function emitEvent(input: EmitInput): Promise<{ event: WebhookEvent
     body,
     sourceKey: input.sourceKey ?? `test:${id}`,
     test,
+    source,
   };
   try {
     await db.webhookEvents.insert(record);
@@ -93,6 +100,7 @@ export async function emitEvent(input: EmitInput): Promise<{ event: WebhookEvent
         lockedUntilMs: 0,
         request: null,
         test,
+        source,
         createdAt,
         updatedAt: createdAt,
       }),

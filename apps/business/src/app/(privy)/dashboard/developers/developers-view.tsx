@@ -409,6 +409,18 @@ function RevokeDialog({ apiKey, onClose, onDone }: { apiKey: ApiKey | null; onCl
 
 /* ── Webhooks ───────────────────────────────────────────────────────────── */
 
+/** What fed a delivery's event, for the log: the Envio indexer's outbox or this server's chain sync. */
+const SOURCE_LABEL: Record<"chain" | "indexer", { short: string; long: string; tone: StatusPillTone }> = {
+  indexer: { short: "Envio", long: "Envio indexer (Activity outbox)", tone: "teal" },
+  chain: { short: "Chain sync", long: "Polaris chain sync", tone: "neutral" },
+};
+
+/** Where live events come from, when an indexer is configured. */
+const FEED_NOTE: Record<"indexer" | "fallback", string> = {
+  indexer: "Events come from the Envio indexer, with our chain sync as backup.",
+  fallback: "The Envio indexer isn't answering: events come from our chain sync until it does.",
+};
+
 /** A delivery's result, in a word or two, with its tone. */
 function deliveryResult(d: WebhookDelivery, now: number): { tone: StatusPillTone; text: string } {
   if (d.simulated) return { tone: "teal", text: "Signed, not sent" };
@@ -521,6 +533,9 @@ function WebhooksPanel() {
             <h3 className="text-[16px] font-medium">Delivery log</h3>
             <p className="text-[13px] text-ui-muted">Failed deliveries retry up to 8 times over about 34 hours.</p>
           </div>
+          {state.feed && state.feed.mode !== "chain-sync" ? (
+            <p className={`mt-1 text-[13px] ${state.feed.mode === "fallback" ? "text-ui-warn" : "text-ui-muted"}`}>{FEED_NOTE[state.feed.mode]}</p>
+          ) : null}
           <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-1.5">
             {state.deliveries.slice(0, 12).map((d) => {
               const r = deliveryResult(d, now);
@@ -540,6 +555,10 @@ function WebhooksPanel() {
                         {d.test ? (
                           <StatusPill tone="neutral" size="sm" className="h-6 px-2.5 text-[12px]">
                             Test
+                          </StatusPill>
+                        ) : d.source === "indexer" || d.source === "chain" ? (
+                          <StatusPill tone={SOURCE_LABEL[d.source].tone} size="sm" className="h-6 shrink-0 px-2.5 text-[12px]">
+                            {SOURCE_LABEL[d.source].short}
                           </StatusPill>
                         ) : null}
                       </span>
@@ -790,6 +809,7 @@ function DeliveryDrawer({
               items={[
                 { label: "Event", value: <code className="font-mono text-[13px]">{d.event}</code> },
                 { label: "Event ID", value: <code className="font-mono text-[13px]">{d.eventId}</code> },
+                ...(d.source === "indexer" || d.source === "chain" ? [{ label: "Source", value: SOURCE_LABEL[d.source].long }] : []),
                 { label: "Endpoint", value: <span className="font-mono text-[13px] break-all">{d.url}</span> },
                 { label: "Created", value: formatDateTime(d.createdAt) },
                 ...(d.state === "pending" && d.nextAttemptAt ? [{ label: "Next attempt", value: formatDateTime(d.nextAttemptAt) }] : []),
