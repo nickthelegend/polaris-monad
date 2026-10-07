@@ -32,12 +32,12 @@ send / split → receipt), (2) every sponsor requirement met with real calls,
 
 | # | Phase | Depends on | Status |
 |---|---|---|---|
-| P1 ★ | **Zero-mock product path**: remove offline demo data, the dev mock session, the shop's dev mock API, fixture evidence and the mock dollar from what runs | — | IN PROGRESS |
-| P2 ★ | **Real local stack**: `demo:local` on an anvil fork of Monad testnet with Agora's real AUSD, Chainlink's forwarder, real WebAuthn (virtual authenticator with PRF in automation) | P1 | NOT STARTED |
+| P1 ★ | **Zero-mock product path**: remove offline demo data, the dev mock session, the shop's dev mock API, fixture evidence and the mock dollar from what runs | — | DONE (7 Oct) |
+| P2 ★ | **Real local stack**: `demo:local` on an anvil fork of Monad testnet with Agora's real AUSD, Chainlink's forwarder, real WebAuthn (virtual authenticator with PRF in automation) | P1 | DONE (7 Oct; CRE via local runners until `cre login`) |
 | P3 | **Indexer live**: Envio HyperIndex on the local chain feeding the dashboard, webhooks and CRE candidates | P2 for the fork variant | DONE (local) |
-| P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | IN PROGRESS (`demo:e2e` 55 of 55 on the fork, 58 of 58 since P1.8's Take out on `metropolis/boost-withdraw`; the Claude in Chrome pass not started) |
-| P5 | **Quality loop**: tests, typecheck, lint, contracts, Slither, secret scan, 375 px, a11y basics, failure states; gap grep re-run | P4 | IN PROGRESS (first pass green) |
-| P6 | **Judge package**: README, SUBMISSION.md, DEPLOY-LATER.md, kit | — | DONE (refresh at the end) |
+| P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | DONE (7 Oct): `demo:e2e` 58/58; browser R2 52 PASS, 0 FAIL, 28 UNTESTED |
+| P5 | **Quality loop**: tests, typecheck, lint, contracts, Slither, secret scan, 375 px, a11y basics, failure states; gap grep re-run | P4 | DONE (7 Oct): 33/33 checks, gap grep clean |
+| P6 | **Judge package**: README, SUBMISSION.md, DEPLOY-LATER.md, kit | — | DONE (refreshed 7 Oct) |
 | P7 | **Awaiting the team**: testnet go (PolarisSplit, real AUSD redeploy), keys (Nansen, Zerion, Envio, `cre login`), the shop's hosting, the Face ID domain, the video, registration | team | BLOCKED |
 
 ## 3. Tasks
@@ -257,4 +257,22 @@ A 44-item checklist, each item 1 (done), 0.5 (built, one step left) or 0.
 | Submission (6): README/licence/attribution, kit, gap/runbook docs, video, registration, pushed | | 3 |
 | **Total** | **44** | **23.25 → 53%** |
 
-**INITIAL: 53%** (6 Oct). Final is recorded at the end of the pipeline.
+**INITIAL: 53%** (6 Oct).
+
+### Final (7 Oct), same 44 items
+
+| Area | Score | What moved |
+|---|---|---|
+| Features (12) | 10.5 | Receipts now run green end to end; Boost add and take out added on top (not in the original 44) |
+| Zero-mock product path (6) | 6 | G1–G11 closed: no offline demo, mock session, sample book, shop mock API, fixture evidence or mock dollar in what runs; the local stack is a fork with Agora's AUSD; e2e signs in through a real WebAuthn ceremony. The dev signer survives only in the legacy `DEMO_CHAIN=hardhat` mode |
+| Integrations (8) | 4 | Envio runs locally (0.5); real AUSD on the fork (0.5); Nansen, Zerion, a real-device Face ID still 0 |
+| Data and auth (3) | 1.5 | Unchanged: hosted Privy login waits for the allowed domains |
+| Tests (4) | 4 | 33/33 checks (contracts 631, business 296, underwriting 285, workflows 216, SDK 157, shop 96, app 88, …); Slither triaged; `demo:e2e` 58/58 on the fork; browser R2 0 FAIL |
+| Deploy (5) | 1.75 | Unchanged: testnet on hold |
+| Submission (6) | 3.5 | Pushed in part (the integration branch; the last commits wait for the team's OK) |
+| **Total** | **31.25 / 44 → 71%** | |
+
+**FINAL: 71%.** What is left is almost all the team's: keys (Nansen, Zerion,
+Envio, `cre login`), Privy origins or a test account, the testnet go
+(PolarisSplit, real AUSD, the new vault), the shop's hosting and the Face ID
+domain, a real-phone run, the video, registration and the final push.

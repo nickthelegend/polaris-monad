@@ -304,26 +304,26 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 
 | Package | Command | Result on this branch |
 |---|---|---|
-| Contracts | `pnpm --filter @polarispay/contracts test` | 601 passing (PolarisSplit's tests among them) |
+| Contracts | `pnpm --filter @polarispay/contracts test` | 631 passing (PolarisSplit's tests among them, and 19 for taking dollars out of Boost by signature) |
 | `polarispay-sdk` | `pnpm --filter polarispay-sdk test`, `build` | 157 passing; ESM and CJS builds |
-| Underwriting | `pnpm --filter @polarispay/underwriting test`, `typecheck`, `build` | 263 passing |
-| Gateway | `pnpm --filter @polarispay/gateway test` | 7 passing |
+| Underwriting | `pnpm --filter @polarispay/underwriting test`, `typecheck`, `build` | 285 passing (including a check that product code never reaches the test fixtures) |
+| Gateway | `pnpm --filter @polarispay/gateway test` | 8 passing |
 | `@polaris/db` | `pnpm --filter @polaris/db test` | 31 passing |
 | Receipts keys | `pnpm --filter @polaris/receipts test`, `typecheck` | 16 passing (derivation pinned and deterministic, labels kept apart, seal and open, another owner or id failing, tampering) |
 | Indexer client | `pnpm --filter @polarispay/indexer-client test` | 56 passing |
 | Envio indexer | `bash packages/indexer/scripts/wsl.sh test` (macOS, Linux, WSL); `... live` (Envio's runtime against a local chain) | config and schema in sync, codegen, typecheck; 54 passing; `live` 10 passing (also five runs in a row) |
-| CRE workflows | `pnpm --filter @polaris/cre-workflows test`, `typecheck`, `build` (WASM; needs the CRE CLI: `cre:install`, or `CRE_BIN`) | 212 passing; all three workflows compile to WASM |
-| Polaris for Business | `pnpm --filter @polaris/business test`, `typecheck`, `lint`, `build` | 279 passing (12 for sealed receipts); the API auth check covers every route |
-| The Polaris app | `pnpm --filter @polaris/app test`, `typecheck`, `lint`, `check:signatures`, `build` | 47 passing (the Chainlink states, a credit line's provenance, the dollar it signs for, split plans and links, the Android app's `/.well-known/assetlinks.json`, what a build reports to the deploy check, receipt keys beside an unmoved wallet key); 53 signature checks against the Solidity typehashes |
+| CRE workflows | `pnpm --filter @polaris/cre-workflows test`, `typecheck`, `build` (WASM; needs the CRE CLI: `cre:install`, or `CRE_BIN`) | 216 passing; all three workflows compile to WASM |
+| Polaris for Business | `pnpm --filter @polaris/business test`, `typecheck`, `lint`, `build` | 296 passing, 1 skipped (a live indexer test, opt-in; 12 for sealed receipts); the API auth check covers every route |
+| The Polaris app | `pnpm --filter @polaris/app test`, `typecheck`, `lint`, `check:signatures`, `build` | 88 passing (the Chainlink states, a credit line's provenance, the dollar it signs for, split plans and links, the Android app's `/.well-known/assetlinks.json`, what a build reports to the deploy check, receipt keys beside an unmoved wallet key); 53 signature checks against the Solidity typehashes |
 | Halcyon | `pnpm --filter @polaris/shop test`, `typecheck`, `lint`, `build` | 96 passing; the build proves it serves only the store's five API routes |
 | Landing | `pnpm --filter @polaris/landing typecheck`, `build` | builds |
 | Android (TWA) | `pnpm --filter @polaris/android test`, `build` | 51 passing; a signed APK (needs a JDK 17+ and an Android SDK, found on the machine: [`apps/android`](apps/android/README.md#build-it)) |
-| The deploy check | `pnpm test:scripts` | 29 passing (every check against a fake deployment, one broken setting at a time) |
+| The deploy check | `pnpm test:scripts` | 38 passing (every check against a fake deployment, one broken setting at a time) |
 | Chainlink FX rates | `pnpm --filter @polaris/fx test`, `typecheck` (`check:live` reads every feed) | 46 passing |
 | End to end | `DEMO_FAST_PLANS=1 pnpm demo:local` + `pnpm demo:e2e` | 24 of 24 steps (Pay now, Pay in 4 with CRE underwriting, a new buyer's one-tap line, a CRE collection, Subscribe, direct wallet pay, the dashboard, a dashboard payment link paid and reopened); [`docs/demo`](docs/demo) |
 | | `DEMO_FAST_PLANS=1 pnpm demo:local` + `pnpm demo:e2e:chainlink` | 18 of 18 steps (FX in pesos, CRE underwriting with the line labelled a local run, the guardian pausing and resuming Pay in 4 from Chainlink AUSD/USD on Monad mainnet with Pay now still working, a dunned buyer collected by the log trigger 2 s after signing again, the Chainlink dashboard); [`docs/demo/chainlink`](docs/demo/chainlink/README.md) |
 | | `pnpm demo:local` + `pnpm demo:e2e:split` | 22 of 22 steps (a split made on a phone, a share paid by a friend with no account and one with, the same share relayed twice paying once, the organiser's Activity, closing it, a split by named amounts paid in full); [`docs/design/split`](docs/design/split/README.md) |
-| | `DEMO_FAST_PLANS=1 pnpm demo:local` (fork mode) + `pnpm demo:e2e`, then `pnpm demo:e2e:split` | On an anvil fork of Monad testnet with Agora's AUSD, buyers signing in with passkeys on Chrome's virtual authenticator, no provider keys: 55 passed, 0 failed, 0 not run (33 steps of its own, the split's 22): the review opens no line and names the missing keys, the buyer adds $351 to Boost with one Face ID, and Pay in 4 opens on chain against that line, its first instalment collected by the CRE collections workflow; the split alone 22 of 22 (6 Oct 2026) |
+| | `DEMO_FAST_PLANS=1 pnpm demo:local` (fork mode) + `pnpm demo:e2e`, then `pnpm demo:e2e:split` | On an anvil fork of Monad testnet with Agora's AUSD, buyers signing in with passkeys on Chrome's virtual authenticator, no provider keys: 58 passed, 0 failed, 0 not run (36 steps of its own, the split's 22): the review opens no line and names the missing keys, the buyer adds $351 to Boost with one Face ID, Pay in 4 opens on chain against that line, the CRE collections workflow collects it, and once the plan is repaid the buyer takes $25 out of Boost with one Face ID (relayed `withdrawWithSig`, 0 MON); the split alone 22 of 22 (7 Oct 2026) |
 | | `pnpm --filter @polaris/business e2e:local` | 13 of 13 checks (SDK sessions, relayed Pay now and Pay in 4, verified webhooks, a collection) |
 | | `pnpm --filter @polarispay/contracts e2e:local` | all twelve flows (the credit guard and `reauthorize` among them); the buyer, sender and freelancer never hold MON |
 | | `pnpm --filter @polaris/cre-workflows e2e:local` | 12 passing (all three workflows and every trigger against real contracts on a local node) |
@@ -355,7 +355,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 | `packages/db` | Polaris for Business storage (SQLite or memory), API keys, webhook signing |
 | [`packages/receipts`](packages/receipts/README.md) | Receipts only the buyer can read: keys from the same Face ID PRF output as the wallet (HKDF, one label per key), HPKE sealing to the buyer's inbox key, the texts the account signs; shared by the app and the API |
 | [`packages/fx`](packages/fx/README.md) | Chainlink FX rates for the local-currency line: the verified feed table (Monad mainnet, Ethereum, Polygon, Base), a cached viem reader, the display formatting |
-| [`packages/ui`](packages/ui/README.md) | The shared component library both web apps are built from (`/gallery` in each) |
+| [`packages/ui`](packages/ui/README.md) | The shared component library both web apps are built from (`/gallery` in each, development builds only) |
 | `packages/brand` | The Polaris mark and wordmark |
 | `packages/keeperhub` | The dunning ladder the collections path uses |
 | [`workflows`](workflows/README.md) | The Chainlink CRE workflows: `polaris-underwrite` (HTTP trigger), `polaris-collections` (cron and an EVM log trigger), `polaris-guardian` (cron, reading Chainlink AUSD/USD on Monad mainnet); and their local runners `trigger:local`, `collections:local`, `guardian:local` |
