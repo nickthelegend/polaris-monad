@@ -145,11 +145,11 @@ function WalletPanel() {
   return (
     <PanelCard title="Payout wallet" subtitle="An account only you control, created with your sign-in. Every payment settles here in AUSD.">
       {wallet ? (
-        <div className="mt-5 grid gap-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+        <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
           <span className="w-fit overflow-hidden rounded-[18px]">
             <QrCode value={wallet} label="QR code of your payout wallet address" size={148} />
           </span>
-          <div className="grid min-w-0 gap-3">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
             <div className="flex min-w-0 items-center gap-2 rounded-ui-field bg-ui-surface-1 p-1.5 pl-4">
               <code className="min-w-0 flex-1 truncate font-mono text-[13px]" title={wallet}>
                 {wallet}
