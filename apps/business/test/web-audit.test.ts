@@ -7,6 +7,8 @@ import { POST as setName, PUT as putMe } from "@/app/api/me/route";
 import { POST as withdraw } from "@/app/api/payouts/route";
 import { POST as openLink } from "@/app/api/public/links/[id]/checkout/route";
 
+import { getDb } from "@/server/db";
+
 import { json, params, request, setupServer, signIn } from "./helpers/env";
 
 /**
@@ -37,6 +39,21 @@ describe("links", () => {
     const opened = await json(await openLink(request("POST", `/api/public/links/${id}/checkout`), params({ id })));
     expect(opened.status).toBe(410);
     expect(opened.body.error.code).toBe("link_inactive");
+  });
+
+  it("tell a turned-off link from an expired one, so the buyer's checkout can say which (R1 A7)", async () => {
+    const off = await json(await createLink(request("POST", "/api/links", { body: LINK }), params({})));
+    const offId = off.body.data.id as string;
+    await updateLink(request("PATCH", `/api/links/${offId}`, { body: { active: false } }), params({ id: offId }));
+    const expired = await json(await createLink(request("POST", "/api/links", { body: { ...LINK, expiresInHours: 1 } }), params({})));
+    const expiredId = expired.body.data.id as string;
+    await getDb().links.update(expiredId, (l) => ({ ...l, expiresAt: new Date(Date.now() - 1000).toISOString() }));
+
+    const a = await json(await openLink(request("POST", `/api/public/links/${offId}/checkout`), params({ id: offId })));
+    const b = await json(await openLink(request("POST", `/api/public/links/${expiredId}/checkout`), params({ id: expiredId })));
+    expect([a.status, a.body.error.code]).toEqual([410, "link_inactive"]);
+    expect([b.status, b.body.error.code]).toEqual([410, "link_expired"]);
+    expect(a.body.error.message).toMatch(/turned off/);
   });
 
   it("only turn off: any other change is refused, naming the field", async () => {

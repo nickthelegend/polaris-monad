@@ -27,6 +27,7 @@ import { LocalEquivalent } from "@/components/local-equivalent";
 import { RouteSheet, useCloseSheet } from "@/components/shell/sheet-host";
 import { SuccessSheet } from "@/components/success-sheet";
 import { CheckoutDesktop, CheckoutMissing } from "@/desktop/checkout";
+import { LINK_GONE_TEXT, type LinkGone } from "@/lib/link-gone";
 import { type PayMode, payLink } from "@/lib/actions";
 import { useAccountState, useOwner } from "@/lib/account/hooks";
 import { laterPausedMessage } from "@/lib/credit-guard";
@@ -361,7 +362,7 @@ export function Receipt({ link, paid, onDone }: { link: PaymentLink; paid: Paid;
 }
 
 /** The route: the intercepting page in app/@sheet (over the current tab), or the page itself (cold, over its tab). */
-export function CheckoutRoute({ link, cold }: { cold?: boolean } & { link: PaymentLink | null }) {
+export function CheckoutRoute({ link, gone, cold }: { cold?: boolean; gone?: LinkGone | null } & { link: PaymentLink | null }) {
   const router = useRouter();
   const successUrl = link ? merchantReturnUrl(link) : null;
 
@@ -399,7 +400,7 @@ export function CheckoutRoute({ link, cold }: { cold?: boolean } & { link: Payme
       desktop={{
         as: "page",
         focus: true,
-        content: !link ? <CheckoutMissing /> : link.status !== "open" ? <CheckoutClosed link={link} framed /> : <CheckoutDesktop link={link} />,
+        content: !link ? <CheckoutMissing gone={gone} /> : link.status !== "open" ? <CheckoutClosed link={link} framed /> : <CheckoutDesktop link={link} />,
       }}
     >
       {link && link.status !== "open" ? (
@@ -412,8 +413,8 @@ export function CheckoutRoute({ link, cold }: { cold?: boolean } & { link: Payme
         <Sheet.Body className="pt-10">
           <EmptyState
             icon={<Link2Off />}
-            title="This link doesn't go anywhere"
-            description="It may have expired, or part of it went missing. Ask whoever sent it for a new one."
+            title={LINK_GONE_TEXT[gone ?? "not_found"].title}
+            description={LINK_GONE_TEXT[gone ?? "not_found"].description}
             action={
               <Button asChild variant="white" size="lg">
                 <Link href="/">Go to Polaris</Link>

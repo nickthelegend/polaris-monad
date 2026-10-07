@@ -30,6 +30,7 @@ import { describeDuration, describeInterval, dueAt, getBalance, getCreditLine, t
 import { useData } from "@/lib/data/hooks";
 import { longDate, shortDate } from "@/lib/dates";
 import { prefetchDomains } from "@/lib/domains";
+import { LINK_GONE_TEXT, type LinkGone } from "@/lib/link-gone";
 import { usd } from "@/lib/money";
 import { useNow } from "@/lib/use-now";
 import { n, subscribeSummary } from "@/lib/view";
@@ -325,14 +326,15 @@ export function CheckoutDesktop({ link }: { link: PaymentLink }) {
   );
 }
 
-/** A link that doesn't resolve, on the same card. */
-export function CheckoutMissing() {
+/** A link that doesn't resolve, on the same card, saying why when the API said (turned off, expired, paid). */
+export function CheckoutMissing({ gone }: { gone?: LinkGone | null }) {
+  const text = LINK_GONE_TEXT[gone ?? "not_found"];
   return (
     <div className="mx-auto grid w-full max-w-[560px] justify-items-center rounded-[32px] border border-ui-hairline-strong p-10">
       <EmptyState
         icon={<Link2Off />}
-        title="This link doesn't go anywhere"
-        description="It may have expired, or part of it went missing. Ask whoever sent it for a new one."
+        title={text.title}
+        description={text.description}
         action={
           <PrimaryButton asChild size="md">
             <Link href="/">Go to Polaris</Link>

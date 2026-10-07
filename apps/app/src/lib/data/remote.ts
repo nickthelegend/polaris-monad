@@ -2,6 +2,7 @@ import { cache } from "react";
 import { type Address, getAddress, type Hex } from "viem";
 import { api } from "../api";
 import { type ApiCreditGuard, toGuardView } from "../credit-guard";
+import { type LinkGone, linkGoneReason } from "../link-gone";
 import type { PaymentLink } from "./types";
 
 /**
@@ -114,31 +115,47 @@ function sessionFor(id: string, fresh: boolean): Promise<string> {
   return pending;
 }
 
-/** No such link or session, or one that is used up, turned off or expired: the page says the link goes nowhere. */
-const gone = (error: unknown) => [404, 410].includes((error as { status?: number }).status ?? 0);
+/**
+ * A checkout link, or why there is none: no such link or session (404), or
+ * one that is used up, turned off by its merchant or expired (410, each with
+ * its own code). The checkout says which (`LINK_GONE_TEXT`).
+ */
+export type LinkLookup = { link: PaymentLink; gone: null } | { link: null; gone: LinkGone };
 
-async function readSession(sessionId: string): Promise<PaymentLink | null> {
+const found = (link: PaymentLink): LinkLookup => ({ link, gone: null });
+
+function goneOr(error: unknown): LinkLookup {
+  const gone = linkGoneReason(error);
+  if (gone) return { link: null, gone };
+  throw error;
+}
+
+async function readSession(sessionId: string): Promise<LinkLookup> {
   try {
-    return toPaymentLink(await api<PublicSession>(`/api/public/sessions/${encodeURIComponent(sessionId)}`));
+    return found(toPaymentLink(await api<PublicSession>(`/api/public/sessions/${encodeURIComponent(sessionId)}`)));
   } catch (error) {
-    if (gone(error)) return null;
-    throw error;
+    return goneOr(error);
   }
 }
 
-async function openLinkSession(id: string, fresh: boolean): Promise<PaymentLink | null> {
+async function openLinkSession(id: string, fresh: boolean): Promise<LinkLookup> {
+  let session: string;
   try {
-    return await readSession(await sessionFor(id, fresh));
+    session = await sessionFor(id, fresh);
   } catch (error) {
-    if (gone(error)) return null;
-    throw error;
+    return goneOr(error);
   }
+  return readSession(session);
+}
+
+export async function lookupRemotePaymentLink(id: string): Promise<LinkLookup> {
+  if (!id.startsWith("pl_")) return readSession(id);
+  const first = await openLinkSession(id, false);
+  // A reusable link whose session someone already paid opens a new one for this buyer.
+  if (first.link && first.link.status !== "open" && opened) return openLinkSession(id, true);
+  return first;
 }
 
 export async function getRemotePaymentLink(id: string): Promise<PaymentLink | null> {
-  if (!id.startsWith("pl_")) return readSession(id);
-  const link = await openLinkSession(id, false);
-  // A reusable link whose session someone already paid opens a new one for this buyer.
-  if (link && link.status !== "open" && opened) return openLinkSession(id, true);
-  return link;
+  return (await lookupRemotePaymentLink(id)).link;
 }
