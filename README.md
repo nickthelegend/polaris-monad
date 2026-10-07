@@ -312,7 +312,7 @@ node scripts/deploy-check.mjs --app https://… --business https://… --landing
 | Receipts keys | `pnpm --filter @polaris/receipts test`, `typecheck` | 16 passing (derivation pinned and deterministic, labels kept apart, seal and open, another owner or id failing, tampering) |
 | Indexer client | `pnpm --filter @polarispay/indexer-client test` | 56 passing |
 | Envio indexer | `bash packages/indexer/scripts/wsl.sh test` (macOS, Linux, WSL); `... live` (Envio's runtime against a local chain) | config and schema in sync, codegen, typecheck; 54 passing; `live` 10 passing (also five runs in a row) |
-| CRE workflows | `pnpm --filter @polaris/cre-workflows test`, `typecheck`, `build` (WASM; needs the CRE CLI: `cre:install`, or `CRE_BIN`) | 216 passing; all three workflows compile to WASM |
+| CRE workflows | `pnpm --filter @polaris/cre-workflows test`, `typecheck`, `build` (WASM; needs the CRE CLI: `cre:install`, or `CRE_BIN`) | 222 passing; all three workflows compile to WASM |
 | Polaris for Business | `pnpm --filter @polaris/business test`, `typecheck`, `lint`, `build` | 296 passing, 1 skipped (a live indexer test, opt-in; 12 for sealed receipts); the API auth check covers every route |
 | The Polaris app | `pnpm --filter @polaris/app test`, `typecheck`, `lint`, `check:signatures`, `build` | 88 passing (the Chainlink states, a credit line's provenance, the dollar it signs for, split plans and links, the Android app's `/.well-known/assetlinks.json`, what a build reports to the deploy check, receipt keys beside an unmoved wallet key); 53 signature checks against the Solidity typehashes |
 | Halcyon | `pnpm --filter @polaris/shop test`, `typecheck`, `lint`, `build` | 96 passing; the build proves it serves only the store's five API routes |

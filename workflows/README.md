@@ -354,9 +354,9 @@ call them directly; `packages/contracts/lib/cre.js` builds the same task list.
 | `src/guardian/` | `workflow.ts` (the handler: two chains, one report), `attestation.ts` (the report, the verdict, the write policy; pure, and `@polaris/cre-workflows/guardian` for the apps) |
 | `src/shared/` | Config schemas, EVM helpers (reads at a block, the finalized header, `writeSized`, receipt), the signed callback |
 | `src/trigger.ts` | `triggerSimulatedUnderwriting` for the API (`underwriteConsentMessage` is `@polaris/cre-workflows/consent`) |
-| `scripts/` | `install-cre.mjs`, `cre.mjs`, `bun.mjs`, `configure.mjs`, `underwriting-payload.mjs`, `local-chain.mjs`, `e2e-local.mjs`, `hardhat.cre-local.config.cjs`, `evidence.mjs`, `collections-loop.mjs` (collections and guardian), `retry-listen.mjs`, `sim.mjs` (what those share); without a CRE login, `local-trigger.mjs`, `local-collections.mjs` and `local-guardian.mjs` (below) |
+| `scripts/` | `install-cre.mjs`, `cre.mjs`, `bun.mjs`, `configure.mjs`, `underwriting-payload.mjs`, `report-gas.mjs` (report gas on Monad testnet, read-only), `local-chain.mjs`, `e2e-local.mjs`, `hardhat.cre-local.config.cjs`, `evidence.mjs`, `collections-loop.mjs` (collections and guardian), `retry-listen.mjs`, `sim.mjs` (what those share); without a CRE login, `local-trigger.mjs`, `local-collections.mjs` and `local-guardian.mjs` (below) |
 | `local/` | One run of each workflow on the SDK's test runtime against a local chain, for those three runners: `underwrite.run.ts`, `collections.run.ts` (either trigger), `guardian.run.ts`; `config.ts` builds their configs in memory from the staging templates and the deployment record |
-| `evidence/` | What real CLI runs left: `<date>/` from `evidence`, `loop/` from the loops and the listener |
+| `evidence/` | What real CLI runs left: `<date>/` from `evidence`, `loop/` from the loops and the listener; `gas/` from `report-gas` |
 | `test/` | Unit tests (`bun test`, `@chainlink/cre-sdk/test`) |
 | `e2e/` | The local-chain round trip |
 
@@ -426,8 +426,11 @@ trigger on `PolarisCheckout.Reauthorized` ([the instant retry](#trigger-1-the-in
    receiver without it just reverts, which means no check) and, when a
    transmitter is set, estimates the whole delivery from it
    (`shared/evm.ts` `writeSized`, the one write path of all three
-   workflows). The run still fails loudly if the forwarder's
-   `ReportProcessed` says the receiver reverted.
+   workflows). That estimate is short of what the receiver needs (measured
+   on Monad testnet, [below](#report-gas-on-monad-testnet)), so it is
+   lifted by (64/63)² before the headroom (`deliveryGas`). The run still
+   fails loudly if the forwarder's `ReportProcessed` says the receiver
+   reverted.
 5. **Outcome:** the receipt's `TaskExecuted` / `TaskSkipped` become events,
    posted to `callback.url` when set (and on every run whose indexer failed).
 
@@ -640,9 +643,10 @@ than attest evidence it could not read (both are tests).
 While simulating, `UnderwritingReceiver` also requires the transaction's
 origin to be its simulation transmitter, which an estimate from the
 forwarder's address cannot be; the workflow reads `simulationTransmitter()`
-and, when it is set, estimates the whole delivery from that key instead
-(safe for a one-item report). On the production forwarder it estimates
-`onReport` like collections.
+and, when it is set, estimates the whole delivery from that key instead,
+lifted past the forwarder's catch like every delivery estimate
+([below](#report-gas-on-monad-testnet)). On the production forwarder it
+estimates `onReport` like collections.
 
 ### `polaris-guardian`
 
@@ -789,6 +793,11 @@ that wrote nothing (a retry that wrote nothing posts nothing).
   `packages/contracts/lib/cre.js` (what the Hardhat suite drives the receivers
   with); workflow names hash to the receivers' bytes10; a full `checkTasks`
   batch fits 5 KB; gas sizing; the chain window revisits every id.
+- `test/gas.test.ts`: the report gas sizing against Monad testnet's own
+  numbers ([`evidence/gas/`](evidence/gas/)): the estimate alone is short
+  for every report that collects or liquidates; the (64/63)² lift alone
+  covers every measured report; each workflow's staging config delivers
+  every report it measured at no more than 21% over its need.
 - `test/indexer-schema.test.ts`: the default candidate query is valid
   against the indexer's Hasura schema (and equal to the indexer client's
   `DUE_CANDIDATES` once that package is here); run over rows, it returns the
@@ -926,7 +935,82 @@ overhead added), as on the simulation forwarder on testnet:
 | Collections, one instalment collected (the log-triggered retry) | 142,835 | 168,109 |
 | Collections, a skip plus a liquidation | 165,406 | 208,048 |
 
-(`e2e:local` on 28 Sep 2026, after the guardian's review fixes: 12 of 12 pass. The guardian's writes cost about 25,000 gas more than before: GuardianReceiver now reads the pool in the same call to check the report against it.)
+(`e2e:local` on 28 Sep 2026, after the guardian's review fixes: 12 of 12 pass. The guardian's writes cost about 25,000 gas more than before: GuardianReceiver now reads the pool in the same call to check the report against it. These limits predate the (64/63)² lift below, which adds 3.2% to each.)
+
+### Report gas on Monad testnet
+
+Monad bills the gas limit, so a write's limit is an estimate plus headroom,
+and the estimate has to cover what the receiver needs. Behind the simulation
+forwarder the only estimate CRE can make is of the whole delivery,
+`eth_estimateGas` of `forwarder.report(...)` from the transmitter (an
+estimate of `onReport` from the forwarder's address is refused:
+`NotSimulationTransmitter(0xB9F7…D192)`). `pnpm report-gas` measures how far
+that estimate is from the need, read-only (`eth_estimateGas` and
+`debug_traceCall`, nothing signed or sent), against the deployed receivers
+from the recorded transmitter, shaped as the CLI sends a report: "needed" is
+the smallest gas limit at which the forwarder's `route` call returns true,
+found by bisecting `debug_traceCall` to the unit. The three "replay" rows are
+the deliveries in [`evidence/2026-09-28/`](evidence/2026-09-28/) at their
+parent blocks (the estimate there equals the one each run logged, and "was"
+is the limit it was sent with); the rest were built with the workflows' own
+encoders at block 68,920,950 on 7 Oct 2026
+([`evidence/gas/2026-10-07.json`](evidence/gas/2026-10-07.json)). Each report
+carries a random execution id, context and signatures, so a rerun moves these
+by a few dozen gas; the shortfalls stay.
+
+| Report | Receiver events | Estimate | Needed | Short by | Limit now | Was (estimate + 15%) |
+|---|---|---:|---:|---:|---:|---:|
+| replay: collections retry, collect #1 | TaskExecuted, CollectionsRun | 284,318 | 286,366 | 2,048 | 337,428 | 326,965 |
+| replay: collections, collect #1, liquidate #1 | TaskExecuted ×2, CollectionsRun | 275,796 | 276,515 | 719 | 327,314 | 317,165 |
+| replay: guardian, the first attestation | CreditGuardUpdated | 291,988 | 293,068 | 1,080 | 346,531 | 335,786 |
+| collections: collect #2 | TaskExecuted, CollectionsRun | 252,016 | 252,728 | 712 | 299,093 | 289,818 |
+| collections: collect #2, liquidate #2 | TaskExecuted ×2, CollectionsRun | 276,594 | 277,307 | 713 | 328,261 | 318,083 |
+| collections: charge #1, not due | TaskSkipped, CollectionsRun | 125,078 | 125,076 | none | 150,000 | 150,000 |
+| collections: collect #1, not due | TaskSkipped, CollectionsRun | 124,955 | 124,953 | none | 150,000 | 150,000 |
+| collections: 3 × collect #2 (three instalments due) | TaskExecuted ×3, CollectionsRun | 324,958 | 326,814 | 1,856 | 385,660 | 373,701 |
+| collections: 8 tasks, 2 executed then 6 skips | TaskExecuted ×2, TaskSkipped ×6, CollectionsRun | 387,244 | 390,542 | 3,298 | 459,581 | 445,330 |
+| collections: 25 tasks, 3 executed then 22 skips | TaskExecuted ×3, TaskSkipped ×22, CollectionsRun | 698,188 | 710,696 | 12,508 | 828,608 | 802,916 |
+| collections: 25 tasks, 22 skips then 3 executed | TaskSkipped ×22, TaskExecuted ×3, CollectionsRun | 860,097 | 877,890 | 17,793 | 1,020,761 | 989,111 |
+| underwriting: a new buyer | UnderwritingApplied | 189,457 | 188,855 | none | 224,848 | 217,875 |
+| underwriting: a new buyer with a linked wallet | UnderwritingApplied | 229,284 | 228,992 | none | 272,114 | 263,676 |
+| underwriting: a thin file | UnderwritingRefused | 137,154 | 136,141 | none | 162,774 | 157,727 |
+| guardian: a healthy attestation, a new round | CreditGuardUpdated | 189,989 | 189,397 | none | 225,479 | 218,487 |
+| guardian: a depeg pause, a new round | CreditGuardUpdated | 189,707 | 189,112 | none | 225,144 | 218,163 |
+| guardian: out of order | AttestationRefused | 134,619 | 133,591 | none | 159,766 | 154,811 |
+
+What it shows:
+
+- **Monad's estimate is short whenever the receiver calls on with real
+  work**: every collections report that collected or liquidated, and the
+  guardian's first attestation. At its own estimate each of those lands
+  with `ReportProcessed` false. The shortfall grows with the receiver's
+  work: 712 gas for one collection, 17,793 (2.07%) for 25 tasks.
+- **Why:** EIP-150 lets a call pass on at most 63/64 of the gas left.
+  Chainlink's MockKeystoneForwarder reaches the receiver through two calls
+  (`report` → `this.route` → `onReport`, read from the traces), each of
+  which must keep back 1/64 of what it passes on, and it catches the
+  receiver running out of gas, so the transaction succeeds either way and
+  the estimator cannot see the missing gas.
+- **The three reports of 28 Sep delivered only because of the 15%
+  headroom**, which was there for state that moves between the estimate and
+  the block, not for this.
+- **The fix** (`deliveryGas` in [`src/shared/evm.ts`](src/shared/evm.ts)):
+  an estimate of a whole delivery is multiplied by (64/63)², one 64/63 for
+  each of the forwarder's two frames (+3.2%), before the headroom. That alone
+  covers every row above, with 4,001 gas or more to spare (9,729 on the
+  largest); the headroom stays for state. "Limit now" is what the staging
+  configs send: 16% to 20% over the need, against 13% to 20% before.
+  [`test/gas.test.ts`](test/gas.test.ts) holds the sizing to this file.
+- **Not covered by a number here:** a report with more than three executed
+  tasks (testnet has one plan with instalments due, three of them). The
+  hold-back grows with the receiver's work as the rows above do; on the
+  deepest call path measured (four calls down to the token) EIP-150 can keep
+  back at most 6.5% of the gas the delivery uses, and the lift and the
+  headroom together add 18.7% to the estimate.
+- Behind the production forwarder the workflows estimate `onReport` alone,
+  from the forwarder's address, where no catch hides a failure; `gas.overhead`
+  covers the forwarder's frames there. Not measured: the production
+  forwarder refuses an unsigned report.
 
 ## Status
 
@@ -934,7 +1018,7 @@ overhead added), as on the simulation forwarder on testnet:
 |---|---|
 | The three workflows compile to WASM with `cre workflow build` (CLI v1.35.0, SDK 1.22.0) | done, no login needed (28 Sep 2026: collections 2.78 MB with both triggers, underwriting 2.89 MB, guardian 2.74 MB) |
 | `project.yaml` with the `monad-mainnet` read target | accepted: `cre workflow hash -T <target>` loads the settings of every target (a misspelt chain name is refused: `invalid chain name`); `cre workflow hash ./guardian -T staging-settings --public_key <any address>` compiles and hashes the guardian with both chains (28 Sep 2026); `cre workflow build` does not read them |
-| Unit tests on the SDK's test runtime; the on-chain round trip on a local node | done (`test`: 209 pass; `e2e:local`: 12 of 12) |
+| Unit tests on the SDK's test runtime; the on-chain round trip on a local node | done (`test`: 222 pass; `e2e:local`: 12 of 12, 28 Sep) |
 | `cre workflow simulate --broadcast` on Monad testnet | ready (`evidence`, `evidence --retry-tx`, the loops, `retry:listen`), and the transmitter `CRE_ETH_PRIVATE_KEY` (0xBBb4…2EA6) is funded with 1 testnet MON and set on all three receivers. What blocked every run even after a login (the CLI aborting on the unset provider-key variables in the shared secrets file) is fixed and tested. Needs `cre login`; then `pnpm --filter @polaris/cre-workflows evidence --retry-tx 0xf02c45bd4ec1102d8ee4a55ea54e9980c28ddff5e7a4dffd222ca0bbba173002` (a real `Reauthorized` from the testnet smoke test). Its runs land in [`evidence/`](evidence/). **Done on 28 Sep 2026**: three reports delivered on Monad testnet ([`evidence/2026-09-28/`](evidence/2026-09-28/)) |
 | `polaris-guardian` | done: cron; Chainlink AUSD/USD read on Monad mainnet (address and decimals checked on chain), the pool on Monad testnet at one finalized block, the verdict re-checked by GuardianReceiver (which reads the pool itself), pause and resume of `openPlan` shown on real contracts (`e2e:local`) |
 | The instant retry (EVM log trigger) | done: trigger 1 of `polaris-collections` on `PolarisCheckout.Reauthorized`; shown on real contracts with a real `reauthorize` receipt (`e2e:local`); under the CLI, `simulate:retry` (one past transaction) or `retry:listen` (live) |

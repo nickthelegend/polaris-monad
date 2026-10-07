@@ -144,9 +144,10 @@ Each task: objective · acceptance · verify · status.
   command brings it up; `check:deployment:fork` 63/63. · DONE (6 Oct,
   `metropolis/fork-stack`): `pnpm demo:local` brings it up and refuses to go
   on unless `check:deployment:fork` passes in full (67 of 67 now; the check
-  grew since the 63). Report gas is sized from a traced delivery (G14 on the
-  fork). `demo:e2e` 23 passed, 0 failed, 5 not run; split 22 of 22 (since
-  P4.1's Boost step: 55 of 55, see P4.1)
+  grew since the 63). Report gas is sized from a traced delivery, then lifted
+  past the forwarder's catch as on testnet (G14, closed 7 Oct). `demo:e2e`
+  23 passed, 0 failed, 5 not run; split 22 of 22 (since P4.1's Boost step:
+  55 of 55, see P4.1)
 - **P2.2 CRE on the fork**: the three workflows' code runs against the fork
   (local runner today; `cre workflow simulate` once `cre login` is done:
   BLOCKED on the team). · IN PROGRESS: the local runners run against the
@@ -236,7 +237,7 @@ evidence: 730 lines. The product-path gaps:
 | G12 | Testnet stablecoin is MockAUSD (`deployments/monad-testnet.json`) | Agora bounty on a labelled mock | P1 | Redeploy on go | P7 |
 | G13 | `README.md` Attribution was "TBD" | Rules require attribution | P1 | Done 6 Oct | P6 |
 | G15 | `apps/app/src/app/gallery`, `apps/business/src/app/gallery` public in production | Shared components with sample values reachable by judges | P3 | Development only | P1.1, P1.2 |
-| G14 | `workflows` CRE report gas estimate undershoots on the fork | A report can land "not processed" | P2 | Measure on testnet (read-only) | P7 |
+| G14 | `workflows` CRE report gas estimate undershoots on the fork | A report can land "not processed" | P2 | Done 7 Oct (`metropolis/cre-gas`): measured on testnet read-only, Monad's estimate is short too (712 to 17,793 gas, up to 2.07%, on every report that collects or liquidates); a delivery estimate is lifted by (64/63)² before the headroom (`deliveryGas`), which covers every measured report | P2 |
 
 The other hits are tooling and tests: deploy and e2e scripts, the contracts'
 own `Mock*.sol` for unit tests, `assert-api-routes.mjs` (a build guard),

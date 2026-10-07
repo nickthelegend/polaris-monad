@@ -136,15 +136,33 @@ one-instalment collections report estimated 151,547 gas and used about 193,000;
 sent at the estimate plus 15% it was refused that way. The local
 MockKeystoneForwarder writes `lastRevertData` in its catch, which makes failing
 dearer than succeeding and hides this in `e2e:local`. `fork:smoke` sizes each
-report from a traced delivery on the path where the receiver succeeds. Behind
-a simulation transmitter the workflows size a write from the same
-forwarder-level estimate (`estimateDelivery` in `workflows/src/shared/evm.ts`;
-the staging configs' floor is 150,000). Whether Monad testnet's own
-`eth_estimateGas` undershoots the same way is not established. On
-`demo:local`'s fork, the local CRE runners answer that estimate with the gas
-of a traced delivery (`tracedDeliveryGas` in
-`workflows/e2e/helpers/local-evm.ts`), to which the workflow adds its 15%
-headroom.
+report from a traced delivery on the path where the receiver succeeds.
+
+**Resolved (7 Oct 2026).** Measured read-only on Monad testnet
+(`eth_estimateGas` and `debug_traceCall` of `forwarder.report(...)` from the
+simulation transmitter, against the deployed receivers; `pnpm --filter
+@polaris/cre-workflows report-gas`, numbers in
+[`workflows/evidence/gas/`](../../workflows/evidence/gas/)): Monad's estimate
+undershoots the same way, by much less than the fork's. Every collections
+report that collected or liquidated failed at its own estimate, short by 712
+gas for one collection (estimate 252,016, needed 252,728) up to 17,793 gas
+(2.07%) for a 25-task report (860,097 against 877,890); so did the guardian's
+first attestation, replayed at its block (1,080 short), while the underwriting
+reports and the later guardian rounds built now delivered at their estimates.
+The three reports delivered on 28 Sep needed 276,515 to
+293,068 gas and were sent with 317,165 to 335,786: the 15% headroom covered
+the shortfall. The cause is EIP-150: the forwarder reaches the receiver
+through two calls (`report` → `this.route` → `onReport`), each of which must
+keep back 1/64 of what it passes on, and an estimator that only checks the
+transaction succeeds cannot see that go missing behind the forwarder's catch.
+The workflows now lift a forwarder-level estimate by (64/63)² (+3.2%) before
+the headroom (`deliveryGas` in `workflows/src/shared/evm.ts`), which covers
+every measured report with at least 4,001 gas to spare; the test
+`workflows/test/gas.test.ts` holds the sizing to those numbers. On
+`demo:local`'s fork, the local CRE runners still answer the estimate with the
+gas of a traced delivery (`tracedDeliveryGas` in
+`workflows/e2e/helpers/local-evm.ts`), since anvil's estimate settles on the
+catch path; the workflow lifts that the same way.
 
 ## Contracts
 
