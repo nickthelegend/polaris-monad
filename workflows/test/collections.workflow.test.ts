@@ -505,8 +505,9 @@ test("behind a simulation transmitter, gas is estimated for the whole delivery f
   const guarded = fakeChain({ ...chain, transmitter });
   run(baseConfig());
   expect(guarded.estimates).toEqual([{ from: transmitter, to: FORWARDER.toLowerCase() }]);
-  // The whole delivery was estimated, so no forwarder overhead on top: estimate + 15%.
-  expect(guarded.gasLimits[0]).toBe((300_000n * 11_500n) / 10_000n);
+  // The whole delivery was estimated, so no forwarder overhead on top: the estimate lifted past
+  // the forwarder's catch (× (64/63)², src/shared/evm.ts deliveryGas), + 15%.
+  expect(guarded.gasLimits[0]).toBe((309_600n * 11_500n) / 10_000n);
 });
 
 describe("the instant retry: an EVM log trigger on PolarisCheckout.Reauthorized", () => {

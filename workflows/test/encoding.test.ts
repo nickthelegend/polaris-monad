@@ -105,10 +105,10 @@ describe("workflow identity and gas", () => {
     expect(splitReport(report)).toEqual({ metadata, body });
   });
 
-  test("the gas limit: estimate (+ overhead when it covered onReport alone) + headroom, clamped", () => {
+  test("the gas limit: estimate (+ overhead for onReport alone, × (64/63)² for a whole delivery) + headroom, clamped", () => {
     const gas = { overhead: "80000", headroomBps: 1500, min: "200000", max: "1000000" };
     expect(gasLimitFor(400_000n, gas)).toBe(552_000n);
-    expect(gasLimitFor(400_000n, gas, "delivery")).toBe(460_000n);
+    expect(gasLimitFor(400_000n, gas, "delivery")).toBe(474_720n); // 412,800 (test/gas.test.ts) + 15%
     expect(gasLimitFor(1n, gas)).toBe(200_000n);
     expect(gasLimitFor(5_000_000n, gas)).toBe(1_000_000n);
   });

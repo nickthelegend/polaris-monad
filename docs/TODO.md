@@ -96,13 +96,16 @@ Community Team Project ($5,000).
       Rehearsed on a local fork (branch `metropolis/ausd-fork`, `deploy:fork`
       and `fork:smoke` in `packages/contracts`): real AUSD supports
       everything the contracts use, 14 of 14 money paths pass
-- [ ] 🤖 **Check CRE report gas on testnet (read-only):** on the fork,
-      `eth_estimateGas` for a forwarder report undershot what the receiver
-      needs (the mock forwarder catches the receiver's out-of-gas cheaply), so
-      a report can land "not processed". The workflows size writes from the
-      same kind of estimate (`estimateDelivery` in `workflows/src/shared/evm.ts`,
-      150,000 minimum); the committed evidence shows ~327k succeeding. Compare
-      Monad's estimate before the next CRE run
+- [x] ✅ **Check CRE report gas on testnet (read-only):** done 7 Oct.
+      Monad testnet's `eth_estimateGas` undershoots too, by less: every
+      collections report that collected or liquidated failed at its own
+      estimate, short by 712 gas (one collection) up to 17,793 gas (2.07%, a
+      25-task report). The three committed runs delivered only because of
+      the 15% headroom. The workflows now lift a forwarder-level estimate by
+      (64/63)² before the headroom (`deliveryGas` in
+      `workflows/src/shared/evm.ts`), which covers every measured report
+      with 4,001 gas or more to spare
+      ([numbers](../workflows/README.md#report-gas-on-monad-testnet))
 - [ ] 🔑 **Judge access:** sponsor research of 5 Oct says the portal asks
       for a live link plus test logins for judges (a merchant login for the
       dashboard). Not in the rules v3 we read on 28 Sep: confirm on the portal
