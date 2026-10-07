@@ -22,6 +22,7 @@ import { useMounted } from "../lib/hooks";
 import { IconSlot } from "../lib/icon";
 import { placeMenu, type MenuPosition } from "./menu-position";
 import { pressable } from "./Button";
+import { nestedTheme } from "./theme-scope";
 
 type MenuContextValue = { close: (restoreFocus?: boolean) => void };
 const MenuContext = createContext<MenuContextValue | null>(null);
@@ -68,17 +69,6 @@ export type MenuProps = {
  * </Menu>
  * ```
  */
-/**
- * The theme scope the trigger sits in, when it is a nested one (a dark panel
- * in a light shell): the portalled menu carries it. The page's own theme, on
- * <html> (with the app's `data-theme-lg`), already reaches <body>: copying it
- * would override `data-theme-lg` on the desktop layout.
- */
-function nestedTheme(el: Element): string | null {
-  const scope = el.closest("[data-theme]");
-  return scope && scope !== document.documentElement ? scope.getAttribute("data-theme") : null;
-}
-
 export function Menu({
   label,
   trigger,

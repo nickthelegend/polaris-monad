@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { cn } from "../lib/cn";
 import { useControllable, useMounted } from "../lib/hooks";
 import { IconSlot } from "../lib/icon";
+import { nestedTheme } from "./theme-scope";
 
 /* ── Field wrapper ───────────────────────────────────────────────────────── */
 
@@ -284,7 +285,7 @@ export function Select<T extends string = string>({
       top: above ? r.top - 8 : r.bottom + 8,
       width,
       above,
-      theme: t.closest("[data-theme]")?.getAttribute("data-theme") ?? null,
+      theme: nestedTheme(t),
     });
   }, [align, options.length]);
 
