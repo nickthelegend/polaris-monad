@@ -144,7 +144,13 @@ export function OnboardingArt({ page, active = true, className }: { page: 1 | 2 
                   width={640}
                   height={640}
                   sizes="(max-width: 440px) 80vw, 360px"
-                  priority={page === 1}
+                  // Every page's renders are mounted at once (the pages slide), and the
+                  // same coin appears on more than one page: one lazy copy would make Next
+                  // take the first page's coin, the LCP, for a lazy image. All eager; the
+                  // first page's first. (Next 16: `priority` is deprecated; the docs
+                  // prefer `loading="eager"` / `fetchPriority` to `preload`.)
+                  loading="eager"
+                  fetchPriority={page === 1 ? "high" : "auto"}
                   className="h-auto w-full select-none drop-shadow-[0_24px_40px_rgba(0,0,0,0.45)]"
                   draggable={false}
                 />
