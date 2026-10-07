@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { useEffect, useId, useRef, useState, type HTMLAttributes, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { roundTimes, smoothPath, useSize, type Pt } from "../charts/geometry";
+import { compactTickLabels, spanTicks } from "../charts/ticks";
 import { cn } from "../lib/cn";
 import { useReducedMotionSafe } from "../lib/hooks";
 
@@ -35,7 +36,11 @@ export type GradientLineChartProps = Omit<HTMLAttributes<HTMLDivElement>, "child
    */
   compactBelow?: number;
   compactAxisWidth?: number;
-  /** Short y axis labels for the compact chart ("2.5k"). */
+  /**
+   * Short y axis labels for the compact chart ("2.5k"). By default the whole
+   * axis is labelled together (`compactTickLabels`): one unit, one precision,
+   * never two labels the same.
+   */
   formatAxisCompact?: (v: number) => string;
   /** A label at the right end, for the latest point ("Now"). */
   lastLabel?: string;
@@ -50,43 +55,6 @@ export type GradientLineChartProps = Omit<HTMLAttributes<HTMLDivElement>, "child
 
 const X_AXIS = 36;
 const TOP = 44; // room for the bubble over the highest point
-
-/**
- * Exactly `count` evenly spaced round labels whose top sits at or above the
- * highest value: the scale spans the whole line, like the reference.
- */
-export function spanTicks(min: number, max: number, count = 4): { lo: number; hi: number; ticks: number[] } {
-  if (min === max) {
-    if (min === 0) max = 1;
-    else {
-      const pad = Math.abs(min) * 0.2;
-      min = Math.max(0, min - pad);
-      max = max + pad;
-    }
-  }
-  const steps = Math.max(1, count - 1);
-  const rough = (max - min) / steps;
-  const pow = 10 ** Math.floor(Math.log10(rough));
-  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8, 10, 15, 20, 25, 50]) {
-    const step = m * pow;
-    let lo = Math.floor(min / step) * step;
-    if (min >= 0 && lo < 0) lo = 0;
-    const hi = lo + steps * step;
-    if (hi >= max - step * 1e-9) {
-      return { lo, hi, ticks: Array.from({ length: count }, (_, i) => Number((lo + i * step).toFixed(10))) };
-    }
-  }
-  return { lo: min, hi: max, ticks: [min, max] };
-}
-
-/** "2.5k", "400", "1.2M": a y label that fits a narrow axis. */
-export function compactNumber(v: number): string {
-  const a = Math.abs(v);
-  const trim = (x: number) => (Math.round(x * 10) / 10).toString();
-  if (a >= 1e6) return `${trim(v / 1e6)}M`;
-  if (a >= 1e3) return `${trim(v / 1e3)}k`;
-  return Math.round(v).toString();
-}
 
 /** A timestamp in ms when `t` is a time; null otherwise. */
 function timeOf(t: GradientPoint["t"]): number | null {
@@ -122,7 +90,7 @@ export function GradientLineChart({
   axisWidth: axisWidthWide = 72,
   compactBelow = 480,
   compactAxisWidth = 48,
-  formatAxisCompact = compactNumber,
+  formatAxisCompact,
   lastLabel,
   tickZone = "local",
   empty,
@@ -235,7 +203,11 @@ export function GradientLineChart({
     }
     return out;
   })();
-  const axisFmt = compact ? formatAxisCompact : (formatAxis ?? formatValue);
+  const axisLabels = compact
+    ? formatAxisCompact
+      ? ticks.map(formatAxisCompact)
+      : compactTickLabels(ticks)
+    : ticks.map(formatAxis ?? formatValue);
   const note = formatBubbleNote === null ? null : (formatBubbleNote ?? ((p: GradientPoint) => formatTime(p.t)));
   const last = n ? data[n - 1]! : null;
 
@@ -292,7 +264,7 @@ export function GradientLineChart({
             </defs>
 
             {/* y axis (none over an all-zero line: there is no scale to read) */}
-            {(allZero ? [] : ticks).map((t) => (
+            {(allZero ? [] : ticks).map((t, i) => (
               <text
                 key={t}
                 x={0}
@@ -302,7 +274,7 @@ export function GradientLineChart({
                 className="ui-figure"
                 style={{ fontSize: 13, fontWeight: 500 }}
               >
-                {axisFmt(t)}
+                {axisLabels[i]}
               </text>
             ))}
 

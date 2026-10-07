@@ -16,6 +16,13 @@ function startOfDay(t: number) {
 
 const paid = (payments: Payment[]) => payments.filter((p) => p.status === "succeeded");
 const at = (p: Payment) => new Date(p.createdAt).getTime();
+/**
+ * A payment's time, never later than `now`. A row can be newer than the
+ * caller's clock (the page's clock was read before the last refresh, or the
+ * chain's block time runs ahead of this machine's); it happened, so it counts
+ * as now rather than falling out of every trailing window.
+ */
+const atMost = (p: Payment, now: number) => Math.min(at(p), now);
 
 /** The change against the previous period; null when there was nothing to compare with. */
 function pctChange(current: number, previous: number): number | null {
@@ -43,8 +50,8 @@ export function salesSummary(payments: Payment[], { days = 30, mode, now = Date.
   let count = 0;
   const spark = Array.from({ length: days }, () => 0);
   for (const p of list) {
-    const t = at(p);
-    if (t >= start && t <= end) {
+    const t = atMost(p, end);
+    if (t >= start) {
       gross += p.amountCents;
       count += 1;
       const i = Math.floor((t - start) / DAY);
@@ -60,7 +67,7 @@ export type ModeSplit = { mode: PayMode; cents: Cents; share: number }[];
 export function salesByMode(payments: Payment[], { days = 30, now = Date.now() } = {}): ModeSplit {
   const start = startOfDay(now) - (days - 1) * DAY;
   const totals: Record<PayMode, number> = { now: 0, later: 0, subscribe: 0 };
-  for (const p of paid(payments)) if (at(p) >= start) totals[p.mode] += p.amountCents;
+  for (const p of paid(payments)) if (atMost(p, now) >= start) totals[p.mode] += p.amountCents;
   const modes = ["now", "later", "subscribe"] as const;
   const shares = wholeShares(modes.map((m) => totals[m]));
   return modes.map((mode, i) => ({ mode, cents: totals[mode], share: shares[i]! }));
@@ -113,8 +120,8 @@ export function periodSummary(payments: Payment[], { days = 30, now = Date.now()
   // The net in micro-units when every payment has them: summed first, truncated once, like the balance.
   let netUnits: bigint | null = 0n;
   for (const p of payments) {
-    const t = at(p);
-    if (t >= start && t <= now) {
+    const t = atMost(p, now);
+    if (t >= start) {
       if (p.status === "succeeded") {
         gross += p.amountCents;
         fees += p.feeCents;
@@ -149,7 +156,7 @@ export function customersThisWeek(payments: Payment[], now = Date.now()): WeekCu
   const week = new Set<string>();
   const lastWeek = new Set<string>();
   for (const p of paid(payments)) {
-    const t = at(p);
+    const t = atMost(p, now);
     if (t >= monday && t < monday + 7 * DAY) {
       perDay[Math.floor((t - monday) / DAY)]!.add(p.buyer);
       week.add(p.buyer);
@@ -184,8 +191,8 @@ export function volumeCandles(payments: Payment[], frame: VolumeFrame, now = Dat
   const end = Math.floor(now / HOUR) * HOUR;
   const start = end - bucket * count;
   const events = paid(payments)
-    .map((p) => ({ t: at(p), v: p.amountCents / 100 }))
-    .filter((e) => e.t >= start - DAY && e.t <= end)
+    .map((p) => ({ t: atMost(p, end), v: p.amountCents / 100 }))
+    .filter((e) => e.t >= start - DAY)
     .sort((a, b) => a.t - b.t);
 
   // Rolling 24h sum at each hour from `start` to `end`.
@@ -255,7 +262,7 @@ export function salesSeries(payments: Payment[], frame: SeriesFrame, { mode, now
   const start = end - span;
   const events = paid(payments)
     .filter((p) => !mode || p.mode === mode)
-    .map((p) => ({ t: at(p), v: p.amountCents / 100, cents: p.amountCents }))
+    .map((p) => ({ t: atMost(p, now), v: p.amountCents / 100, cents: p.amountCents }))
     .sort((a, b) => a.t - b.t);
 
   let gross = 0;

@@ -128,7 +128,8 @@ export type CollectorStatus = {
 
 export type Overview = {
   merchant: Merchant;
-  balanceCents: Cents;
+  /** The payout wallet's AUSD balance; null when the chain couldn't be read (never shown as $0). */
+  balanceCents: Cents | null;
   today: {
     count: number;
     grossCents: Cents;
@@ -194,7 +195,8 @@ export type AutoPayouts = {
 };
 
 export type PayoutsState = {
-  balanceCents: Cents;
+  /** The payout wallet's AUSD balance; null when the chain couldn't be read (never shown as $0). */
+  balanceCents: Cents | null;
   /** The balance's change over the last 24 hours as the chain has it (truncated like the balance); null when nothing moved. Absent: work it out from the lists. */
   changeTodayCents?: Cents | null;
   walletAddress: Address | null;

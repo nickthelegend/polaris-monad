@@ -22,7 +22,7 @@ import { InstallHint } from "@/components/install-hint";
 import { TabScreen } from "@/components/screen";
 import { ProfileDesktop } from "@/desktop/profile";
 import { useNotices } from "@/components/use-notices";
-import { DEV_SIGNER, signIn, signOut } from "@/lib/account";
+import { DEV_SIGNER, EMAIL_LOGIN, signIn, signOut } from "@/lib/account";
 import { useAccountState, useOwner, usePrivyStatus } from "@/lib/account/hooks";
 import { getProfile } from "@/lib/data";
 import { useData } from "@/lib/data/hooks";
@@ -30,7 +30,13 @@ import { monthYear } from "@/lib/dates";
 import { usePrefs } from "@/lib/prefs";
 
 const HOW = [
-  { icon: <ScanFace />, title: "Your account is your Face ID", body: "No password, nothing to write down. Or use your email: the same account on any device." },
+  {
+    icon: <ScanFace />,
+    title: "Your account is your Face ID",
+    body: EMAIL_LOGIN
+      ? "No password, nothing to write down. Or use your email: the same account on any device."
+      : "No password, nothing to write down.",
+  },
   { icon: <WalletCards />, title: "Pay now, in four, or every month", body: "Pay in 4 shows every payment and the total interest before you confirm." },
   { icon: <Link2 />, title: "Send dollars with a link", body: "Share it anywhere. Whoever opens it gets the dollars in under a second." },
   { icon: <ShieldCheck />, title: "Only you can move your money", body: "Every payment needs your confirmation. Polaris covers the cost of every payment." },
@@ -77,7 +83,7 @@ function ProfilePhone() {
               ? "No account on this device yet. Create yours in a second."
               : source === "privy" && privy.email
                 ? privy.email
-                : profile.value
+                : profile.value?.memberSince
                   ? `Since ${monthYear(profile.value.memberSince)}`
                   : " "}
           </p>

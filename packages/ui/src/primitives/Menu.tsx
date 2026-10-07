@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ElementType,
@@ -14,9 +15,12 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "../lib/cn";
+import { useMounted } from "../lib/hooks";
 import { IconSlot } from "../lib/icon";
+import { placeMenu, type MenuPosition } from "./menu-position";
 import { pressable } from "./Button";
 
 type MenuContextValue = { close: (restoreFocus?: boolean) => void };
@@ -37,7 +41,7 @@ export type MenuProps = {
   triggerClassName?: string;
   /** Which edge of the trigger the menu lines up with. */
   align?: "start" | "end";
-  /** Open upwards (a trigger at the bottom of the screen). */
+  /** Open upwards (a trigger at the bottom of the screen). Flips when there isn't room that way. */
   side?: "bottom" | "top";
   /** Menu width in px. */
   width?: number;
@@ -50,6 +54,11 @@ export type MenuProps = {
  * keys, Home and End move between items, Escape and Tab close it, and focus
  * goes back to the trigger. Non-item content (Menu.Header) sits between items.
  *
+ * The menu is portalled to `<body>` and placed with fixed coordinates from the
+ * trigger, so a scrolling or clipping ancestor (a table's `overflow-x-auto`)
+ * never cuts it off. It follows the trigger on scroll and resize, flips to the
+ * other side when there isn't room, and stays inside the viewport.
+ *
  * ```tsx
  * <Menu label="Account" trigger={<Avatar name="Oat & Ember" />} align="end">
  *   <Menu.Header>Oat & Ember · ana@oat.studio</Menu.Header>
@@ -59,6 +68,17 @@ export type MenuProps = {
  * </Menu>
  * ```
  */
+/**
+ * The theme scope the trigger sits in, when it is a nested one (a dark panel
+ * in a light shell): the portalled menu carries it. The page's own theme, on
+ * <html> (with the app's `data-theme-lg`), already reaches <body>: copying it
+ * would override `data-theme-lg` on the desktop layout.
+ */
+function nestedTheme(el: Element): string | null {
+  const scope = el.closest("[data-theme]");
+  return scope && scope !== document.documentElement ? scope.getAttribute("data-theme") : null;
+}
+
 export function Menu({
   label,
   trigger,
@@ -71,11 +91,43 @@ export function Menu({
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const reduced = useReducedMotion();
+  const mounted = useMounted();
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const focusFirst = useRef<"first" | "last">("first");
+  const [pos, setPos] = useState<MenuPosition | null>(null);
+
+  const place = useCallback(() => {
+    const t = triggerRef.current;
+    if (!t) return;
+    setPos(
+      placeMenu({
+        trigger: t.getBoundingClientRect(),
+        menuHeight: menuRef.current?.offsetHeight ?? 0,
+        width,
+        align,
+        side,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        theme: nestedTheme(t),
+      }),
+    );
+  }, [align, side, width]);
+
+  // Placed before paint, then again once the menu has a height (to flip if needed).
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+    const frame = requestAnimationFrame(place);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
 
   const items = () => Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? []);
 
@@ -91,7 +143,9 @@ export function Menu({
       (focusFirst.current === "last" ? list[list.length - 1] : list[0])?.focus();
     });
     const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("pointerdown", onPointer);
     return () => {
@@ -116,7 +170,10 @@ export function Menu({
       e.stopPropagation();
       close();
     } else if (e.key === "Tab") {
-      setOpen(false);
+      // The menu lives at the end of <body>: hand focus back to the trigger
+      // rather than letting Tab leave the page.
+      e.preventDefault();
+      close();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       list[(at + 1) % list.length]?.focus();
@@ -151,30 +208,41 @@ export function Menu({
         >
           {trigger}
         </button>
-        <AnimatePresence>
-          {open ? (
-            <motion.div
-              ref={menuRef}
-              id={id}
-              role="menu"
-              aria-label={label}
-              onKeyDown={onMenuKey}
-              initial={reduced ? { opacity: 0 } : { opacity: 0, y: side === "top" ? 6 : -6, scale: 0.98 }}
-              animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-              exit={reduced ? { opacity: 0 } : { opacity: 0, y: side === "top" ? 4 : -4, scale: 0.98, transition: { duration: 0.12 } }}
-              transition={{ type: "spring", stiffness: 520, damping: 36 }}
-              style={{ width }}
-              className={cn(
-                "absolute z-[800] max-w-[calc(100vw-24px)] overflow-hidden rounded-[22px] bg-ui-surface-2 p-1.5 text-ui-text shadow-ui-pop",
-                side === "bottom" ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px)]",
-                align === "end" ? "right-0 origin-top-right" : "left-0 origin-top-left",
-              )}
-            >
-              {children}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
       </div>
+      {mounted
+        ? createPortal(
+            <AnimatePresence>
+              {open ? (
+                <motion.div
+                  ref={menuRef}
+                  id={id}
+                  role="menu"
+                  aria-label={label}
+                  data-theme={pos?.theme ?? undefined}
+                  onKeyDown={onMenuKey}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, y: pos?.above ? 6 : -6, scale: 0.98 }}
+                  animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                  exit={reduced ? { opacity: 0 } : { opacity: 0, y: pos?.above ? 4 : -4, scale: 0.98, transition: { duration: 0.12 } }}
+                  transition={{ type: "spring", stiffness: 520, damping: 36 }}
+                  style={{
+                    position: "fixed",
+                    left: pos?.left ?? 0,
+                    top: pos?.top ?? 0,
+                    width: pos?.width ?? width,
+                    translate: pos?.above ? "0 -100%" : undefined,
+                    transformOrigin: `${pos?.above ? "bottom" : "top"} ${align === "end" ? "right" : "left"}`,
+                    // Not shown until it has been placed (the first layout pass).
+                    visibility: pos ? undefined : "hidden",
+                  }}
+                  className="z-[1000] overflow-hidden rounded-[22px] bg-ui-surface-2 p-1.5 font-satoshi text-ui-text shadow-ui-pop"
+                >
+                  {children}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
     </MenuContext.Provider>
   );
 }

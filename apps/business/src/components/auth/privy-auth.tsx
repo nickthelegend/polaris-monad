@@ -88,6 +88,7 @@ function PrivyBridge({ children }: { children: ReactNode }) {
   const wallet = useMemo<WalletActions>(
     () => ({
       address,
+      signer: "privy",
       ready: walletsReady,
       signTypedData: async (data, ui) => {
         if (!address) throw new Error("Your payout account is still being set up. Try again in a moment.");
@@ -139,6 +140,7 @@ export function UnconfiguredAuthProvider({ children }: { children: ReactNode }) 
       retry: () => window.location.reload(),
       wallet: {
         address: null,
+        signer: "none",
         ready: false,
         signTypedData: async () => Promise.reject(new Error("Sign-in isn't configured.")),
         addPayoutSigner: async () => Promise.reject(new Error("Sign-in isn't configured.")),

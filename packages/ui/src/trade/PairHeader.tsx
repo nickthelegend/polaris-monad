@@ -151,7 +151,7 @@ export function PairHeader<T extends string>({
   const titleClass = cn("truncate font-satoshi text-[24px] leading-none font-medium tracking-[-0.02em] text-ui-text sm:text-[28px]", titleClassName);
   const heading = <Heading className={titleClass}>{title}</Heading>;
   return (
-    <div className={cn("flex min-w-0 items-center gap-4", className)}>
+    <div className={cn("flex min-w-0 items-center gap-3 sm:gap-4", className)}>
       <CoinPair coins={coins} />
       {options && options.length > 1 ? (
         <>
@@ -161,7 +161,9 @@ export function PairHeader<T extends string>({
           label={`${menuLabel}: ${typeof title === "string" ? title : (options.find((o) => o.value === value)?.label ?? "")}`}
           align="start"
           width={260}
-          triggerClassName="min-w-0 rounded-[12px] active:scale-100"
+          // Shrinks with the row (the title truncates), so the chart toggle stays on screen at 375 px.
+          className="min-w-0"
+          triggerClassName="min-w-0 max-w-full rounded-[12px] active:scale-100"
           trigger={
             <span aria-hidden className="flex min-w-0 items-center gap-2.5 hover:opacity-90">
               <span className={titleClass}>{title}</span>

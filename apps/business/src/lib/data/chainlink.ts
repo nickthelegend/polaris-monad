@@ -98,7 +98,7 @@ export type ChainlinkOverview = {
    * How reports reach the receivers:
    * - `production`: a deployed workflow's DON, through Chainlink's KeystoneForwarder;
    * - `simulation`: `cre workflow simulate --broadcast`, through Chainlink's MockKeystoneForwarder;
-   * - `local`: a local chain's own forwarder (the local runner or hand-built reports).
+   * - `local`: a local chain (demo:local, or an anvil fork of Monad testnet): the workflows' local runner, through that chain's forwarder.
    */
   delivery: { forwarderKind: "production" | "simulation" | "local" | null; forwarder: `0x${string}` | null; locked: boolean; workflowOwner: `0x${string}` | null };
   workflows: ChainlinkWorkflow[];
@@ -166,10 +166,10 @@ export function describeRun(workflow: WorkflowKey, run: ChainlinkRun): RunLine {
 /** Guardian reason bits to names, for runs read from the API. */
 export const guardReasons = reasonsFromMask;
 
-/** "simulate --broadcast", "DON", "local forwarder": how the page names who delivered a report. */
+/** "DON", "simulate --broadcast", "local run": how the page names who delivered a report (the app's words for a local run). */
 export function deliveryLabel(kind: ChainlinkOverview["delivery"]["forwarderKind"]): string {
   if (kind === "production") return "Deployed on the CRE DON (KeystoneForwarder)";
   if (kind === "simulation") return "cre workflow simulate --broadcast (MockKeystoneForwarder)";
-  if (kind === "local") return "Local chain forwarder";
+  if (kind === "local") return "CRE workflow, local run";
   return "Not deployed";
 }

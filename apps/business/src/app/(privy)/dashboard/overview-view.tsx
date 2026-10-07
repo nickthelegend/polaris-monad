@@ -194,7 +194,7 @@ function SalesChart({ payments, empty, className }: { payments: QueryState<Payme
             label={`${what}, as candles of the rolling ${SERIES_FRAMES[frame].windowLabel} total`}
             data={series.candles}
             height={380}
-            formatPrice={(v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : `$${Math.round(v)}`)}
+            formatPrice={(v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}K` : v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`)}
             formatTime={time}
             className="rounded-[20px]"
           />

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { salesSeries, type SeriesFrame } from "@/lib/data/analytics";
+import { periodSummary, salesByMode, salesSeries, salesSummary, type SeriesFrame } from "@/lib/data/analytics";
+import type { Payment } from "@/lib/data/types";
+
 import { testPayments } from "./helpers/payments";
 
 /**
@@ -34,5 +36,41 @@ describe("salesSeries", () => {
     expect(s.grossCents).toBe(12_34);
     expect(s.points[0]!.value).toBe(0);
     expect(s.points.at(-1)!.value).toBe(12.34);
+  });
+});
+
+/**
+ * R1 B5: the Payments tiles read $0.00 while the list showed a paid $2.00
+ * payment, because the summary dropped rows newer than the moment the page
+ * opened (and the fork's block time ran ~110 s ahead of the wall clock). A
+ * row newer than the caller's clock happened: it counts as now.
+ */
+describe("trailing windows never drop a row newer than now", () => {
+  const sale = (createdAt: number, cents = 2_00): Payment => {
+    const base: Payment = { ...testPayments(NOW).find((p) => p.status === "succeeded")! };
+    delete base.netUnits;
+    return { ...base, id: `pay_${createdAt}`, mode: "now", amountCents: cents, feeCents: 1, netCents: cents - 1, createdAt: new Date(createdAt).toISOString() };
+  };
+
+  it("periodSummary counts a payment dated after `now` (chain clock ahead, or the page's clock older than the data)", () => {
+    const ahead = sale(NOW + 110_000);
+    const s = periodSummary([ahead], { days: 30, now: NOW });
+    expect(s).toMatchObject({ gross: 2_00, fees: 1, net: 1_99, count: 1, failed: 0 });
+  });
+
+  it("periodSummary still leaves out what is older than the window", () => {
+    const old = sale(NOW - 40 * 86_400_000);
+    expect(periodSummary([old], { days: 30, now: NOW }).count).toBe(0);
+  });
+
+  it("salesByMode, salesSummary and salesSeries count it too", () => {
+    const ahead = sale(NOW + 110_000);
+    expect(salesByMode([ahead], { days: 30, now: NOW }).find((m) => m.mode === "now")!.cents).toBe(2_00);
+    expect(salesSummary([ahead], { days: 30, now: NOW })).toMatchObject({ grossCents: 2_00, count: 1 });
+    for (const frame of ["1h", "24h", "1w", "1m"] as const) {
+      const s = salesSeries([ahead], frame, { now: NOW });
+      expect(s.grossCents, frame).toBe(2_00);
+      expect(s.points.at(-1)!.value, frame).toBe(2);
+    }
   });
 });

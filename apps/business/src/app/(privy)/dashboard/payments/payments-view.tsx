@@ -27,7 +27,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Address, CopyAction, DrawerActions, ExplorerAction, ModeBadge, PaymentStatusBadge, TxLink, downloadCsv } from "@/components/dashboard/bits";
-import { DataModeNotice, LoadError, StaleNotice } from "@/components/dashboard/common";
+import { DataModeNotice, LoadError, StaleNotice, useNow } from "@/components/dashboard/common";
 import { FigureRow, PageHead } from "@/components/dashboard/page-head";
 import { MODE_COLOR, PaymentName, paymentPill } from "@/components/dashboard/payment-bits";
 import { explorerTx } from "@/lib/chain";
@@ -314,10 +314,14 @@ const COLUMNS: TableColumn<Payment>[] = [
   },
 ];
 
-/** The last 30 days, the Overview's window, against the 30 before. */
+/**
+ * The last 30 days, the Overview's window, against the 30 before. On a live
+ * clock (the window rolls over at midnight); a payment newer than the clock
+ * counts as now, so a refresh shows it in the figures at once.
+ */
 function useSummary(payments: Payment[] | undefined) {
-  const [openedAt] = useState(() => Date.now());
-  return useMemo(() => (payments ? periodSummary(payments, { days: 30, now: openedAt }) : null), [payments, openedAt]);
+  const now = useNow(60_000);
+  return useMemo(() => (payments ? periodSummary(payments, { days: 30, now }) : null), [payments, now]);
 }
 
 function PaymentDrawer({ payment, onClose }: { payment: Payment | null; onClose: () => void }) {

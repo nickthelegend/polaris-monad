@@ -13,6 +13,7 @@ import { reasonsFromMask } from "@/lib/data/guard";
 import { getDb } from "../db";
 import { explorerTxUrl, getConfig, type ChainConfig } from "../env";
 import { creditGuard } from "./guardian";
+import { forwarderKindOf } from "./provenance";
 
 /**
  * The dashboard's Chainlink page: each CRE workflow, its triggers, and what
@@ -263,7 +264,7 @@ export async function chainlinkOverview(merchant: MerchantRecord): Promise<Chain
     deployed: true,
     network: { chainId: chain.id, name: chain.name, explorerUrl: chain.explorerUrl || null },
     delivery: {
-      forwarderKind: cre?.forwarderKind ?? null,
+      forwarderKind: forwarderKindOf(cre?.forwarderKind, chain),
       forwarder: cre?.forwarder ? getAddress(cre.forwarder) : null,
       locked: Boolean(cre?.locked),
       workflowOwner: cre?.locked?.workflowOwner ?? cre?.workflowOwner ?? null,

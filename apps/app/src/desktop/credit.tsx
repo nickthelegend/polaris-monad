@@ -260,7 +260,7 @@ export function ScoreDesktop() {
   // From when the line was scored (its CRE decision), never before: the last point is today's score.
   const points = useMemo(() => {
     if (!credit.value || !plans.value || !profile.value || !now) return null;
-    const history = scoreHistory(credit.value, plans.value.plans, credit.value.openedAt ?? profile.value.memberSince, days, now);
+    const history = scoreHistory(credit.value, plans.value.plans, credit.value.openedAt ?? profile.value.memberSince ?? now, days, now);
     // No score yet: a flat zero, which the chart shows as its empty state.
     return history.length ? history : [{ t: now - 86_400_000, value: 0 }, { t: now, value: 0 }];
   }, [credit.value, plans.value, profile.value, days, now]);

@@ -68,7 +68,7 @@ export function ScoreSheet() {
   const history = useMemo(
     () =>
       credit.value && plans.value && profile.value && now
-        ? scoreHistory(credit.value, plans.value.plans, credit.value.openedAt ?? profile.value.memberSince, days, now)
+        ? scoreHistory(credit.value, plans.value.plans, credit.value.openedAt ?? profile.value.memberSince ?? now, days, now)
         : null,
     [credit.value, plans.value, profile.value, days, now],
   );

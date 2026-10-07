@@ -45,12 +45,34 @@ export const CHAINLINK_FORWARDERS: Readonly<Record<number, { production: readonl
 
 const LOCAL_RPC = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/;
 
+/**
+ * A local chain: demo:local's 31337, or a node on this machine standing in
+ * for Monad testnet (an anvil fork). Its reports come from the workflows'
+ * local runner, whatever forwarder the deployment record names.
+ */
+export function isLocalChain(chain: Pick<ChainConfig, "id" | "rpcUrl">): boolean {
+  return chain.id === 31337 || LOCAL_RPC.test(chain.rpcUrl);
+}
+
+/**
+ * How reports reach the receivers on `chain`, for the Chainlink page: the
+ * deployment record's kind, except on a local chain, where the local runner
+ * delivers them (a fork keeps Chainlink's MockKeystoneForwarder at its
+ * address and the record says "simulation", but `cre workflow simulate`
+ * didn't send them).
+ */
+export function forwarderKindOf(
+  recorded: "local" | "simulation" | "production" | undefined,
+  chain: Pick<ChainConfig, "id" | "rpcUrl">,
+): "local" | "simulation" | "production" | null {
+  if (isLocalChain(chain)) return "local";
+  return recorded ?? null;
+}
+
 /** Pure: the delivery kind of a report the `forwarder` delivered on `chain`. */
 export function deliveryOf(forwarder: string | null, chain: Pick<ChainConfig, "id" | "rpcUrl">): ReportDelivery {
-  // A local chain (demo:local's 31337, or a node on this machine standing in
-  // for Monad testnet) can plant a mock at Chainlink's addresses: nothing
-  // there is Chainlink's.
-  if (chain.id === 31337 || LOCAL_RPC.test(chain.rpcUrl)) return "local";
+  // A local chain can plant a mock at Chainlink's addresses: nothing there is Chainlink's.
+  if (isLocalChain(chain)) return "local";
   if (!forwarder || !isAddress(forwarder)) return "unknown";
   const f = getAddress(forwarder);
   const known = CHAINLINK_FORWARDERS[chain.id];

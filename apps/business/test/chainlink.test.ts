@@ -19,7 +19,8 @@ import { describeRun } from "@/lib/data/chainlink";
 import { describeCron, nextCronFire } from "@/lib/data/cron";
 import { GUARD_PAUSED_MESSAGE, guardChecks, lastCheckedLine, reasonsFromMask } from "@/lib/data/guard";
 import { describeGuard, resetCreditGuardForTests, type GuardReads } from "@/server/cre/guardian";
-import { CHAINLINK_FORWARDERS, deliveryOf, PROVENANCE_LABEL, resetProvenanceForTests } from "@/server/cre/provenance";
+import { CHAINLINK_FORWARDERS, deliveryOf, forwarderKindOf, PROVENANCE_LABEL, resetProvenanceForTests } from "@/server/cre/provenance";
+import { deliveryLabel } from "@/lib/data/chainlink";
 import { getDb } from "@/server/db";
 import { syncChain } from "@/server/ingest/sync";
 import { TYPES } from "@/server/relayer/typed-data";
@@ -522,5 +523,17 @@ describe("report provenance (the app's \"Verified by Chainlink CRE\")", () => {
       local: "CRE workflow, local run",
       unknown: "CRE workflow report",
     });
+  });
+
+  it("names a local chain's delivery for what it is on the Chainlink page, not 'simulate --broadcast' (R1 B9)", () => {
+    // The fork's deployment record says "simulation" (Chainlink's MockKeystoneForwarder is at its address), but the local runner sent the reports.
+    const fork = { id: 10143, rpcUrl: "http://127.0.0.1:25545" };
+    expect(forwarderKindOf("simulation", fork)).toBe("local");
+    expect(forwarderKindOf("local", { id: 31337, rpcUrl: "http://127.0.0.1:8545" })).toBe("local");
+    expect(forwarderKindOf("simulation", testnet)).toBe("simulation");
+    expect(forwarderKindOf("production", testnet)).toBe("production");
+    expect(forwarderKindOf(undefined, testnet)).toBeNull();
+    expect(deliveryLabel("local")).toBe(PROVENANCE_LABEL.local);
+    expect(deliveryLabel("simulation")).toContain("simulate --broadcast");
   });
 });

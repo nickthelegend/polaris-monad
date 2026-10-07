@@ -22,7 +22,7 @@ import { Address } from "@/components/dashboard/bits";
 import { PageHead } from "@/components/dashboard/page-head";
 import { RegistrationBadge, registrationOf, useRegisterAction } from "@/components/dashboard/registration";
 import { QrCode } from "@/components/qr";
-import { useAuth } from "@/lib/auth-context";
+import { SIGNER_LABEL, useAuth } from "@/lib/auth-context";
 import { DataError, errorMessage } from "@/lib/data";
 import { formatDate } from "@/lib/data/format";
 import { useMerchant } from "@/lib/merchant-context";
@@ -140,6 +140,7 @@ function BusinessPanel() {
 
 function WalletPanel() {
   const { merchant } = useMerchant();
+  const signer = useAuth().wallet.signer;
   const wallet = merchant.walletAddress;
   return (
     <PanelCard title="Payout wallet" subtitle="An account only you control, created with your sign-in. Every payment settles here in AUSD.">
@@ -160,7 +161,7 @@ function WalletPanel() {
               variant="surface"
               items={[
                 { label: "Explorer", value: <Address value={wallet} label="payout address" /> },
-                { label: "Signing", value: "Your sign-in (Privy)" },
+                { label: "Signing", value: SIGNER_LABEL[signer] },
               ]}
             />
           </div>
