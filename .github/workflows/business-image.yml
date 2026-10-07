@@ -74,7 +74,7 @@ jobs:
         run: |
           curl -fsS -H "Authorization: Bearer ci-cron" http://127.0.0.1:3100/api/health | tee health.json; echo
           grep -q '"production":true' health.json
-          grep -q '"devMockSession":false' health.json
+          grep -q '"localSession":false' health.json
           curl -fsS http://127.0.0.1:3100/api/health/ready | grep -q '"persistent":true'
           # PID 1 is the server itself (the entrypoint execs it): /proc/1 belongs to the user it runs as.
           test "$(docker exec business stat -c %U /proc/1)" = "node" || { echo "the server doesn't run as node"; exit 1; }
