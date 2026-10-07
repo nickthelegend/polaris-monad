@@ -35,7 +35,7 @@ send / split → receipt), (2) every sponsor requirement met with real calls,
 | P1 ★ | **Zero-mock product path**: remove offline demo data, the dev mock session, the shop's dev mock API, fixture evidence and the mock dollar from what runs | — | IN PROGRESS |
 | P2 ★ | **Real local stack**: `demo:local` on an anvil fork of Monad testnet with Agora's real AUSD, Chainlink's forwarder, real WebAuthn (virtual authenticator with PRF in automation) | P1 | NOT STARTED |
 | P3 | **Indexer live**: Envio HyperIndex on the local chain feeding the dashboard, webhooks and CRE candidates | P2 for the fork variant | DONE (local) |
-| P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | IN PROGRESS (`demo:e2e` 55 of 55 on the fork; the Claude in Chrome pass not started) |
+| P4 ★ | **Verification**: `demo:e2e` (incl. receipts, split) green on the real stack; every item of the zero-mock test plan PASS or UNTESTED with its dependency, via Claude in Chrome with console and network clean | P1, P2 | IN PROGRESS (`demo:e2e` 55 of 55 on the fork, 58 of 58 since P1.8's Take out on `metropolis/boost-withdraw`; the Claude in Chrome pass not started) |
 | P5 | **Quality loop**: tests, typecheck, lint, contracts, Slither, secret scan, 375 px, a11y basics, failure states; gap grep re-run | P4 | IN PROGRESS (first pass green) |
 | P6 | **Judge package**: README, SUBMISSION.md, DEPLOY-LATER.md, kit | — | DONE (refresh at the end) |
 | P7 | **Awaiting the team**: testnet go (PolarisSplit, real AUSD redeploy), keys (Nansen, Zerion, Envio, `cre login`), the shop's hosting, the Face ID domain, the video, registration | team | BLOCKED |
@@ -70,9 +70,20 @@ Each task: objective · acceptance · verify · status.
   The raise it names is exact (6 Oct): face value for a secured-only
   account, the vault's multiplier otherwise, from the credit API's
   `boostAtFaceValue` (ScoreManager's own rule); no figure while that is unknown.
-  Take out: BLOCKED (contract): `CollateralVault.withdraw` pays only the
-  caller, so a buyer with no MON can't, and the relayer can't on their
-  behalf; needs a signed withdraw and a redeploy (team decision)
+  Take out: DONE on the local fork (7 Oct, `metropolis/boost-withdraw`);
+  testnet WAITS for the team's go. `CollateralVault.withdrawWithSig`: the
+  borrower's EIP-712 `Withdraw`, paid to the borrower only, under
+  `withdraw`'s own rules (nothing while a plan is open), storage layout kept;
+  19 contract tests (630 in all). The relayer's `withdrawCollateral` and the
+  policy builder's rule (not applied to Privy); 290 business tests. The
+  Boost sheet's Take out, one Face ID, "Taken out." from the chain; 85 app
+  tests. `demo:e2e` on the fork: 36 of 36 with the three Take out steps,
+  split 22 of 22 (58 of 58; a first run failed one step outside this change,
+  the dashboard link's Done going Home within 2.5 s on a loaded machine, and
+  passed on the re-run). Testnet's vault predates `withdrawWithSig`: the
+  relayer and the app say it isn't available there yet. The redeploy, the
+  Privy policy update and what happens to the old vault's locks:
+  [`docs/DEPLOY-LATER.md`](docs/DEPLOY-LATER.md) block 2b
 - **P1.2 Business without the dev mock session.** Remove
   `POLARIS_DEV_MOCK_SESSION`, `components/auth/mock-auth.tsx`,
   `lib/data/sample.ts`, `chainlink-sample.ts` and the `placeholder` branches

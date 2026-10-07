@@ -102,10 +102,25 @@ The relayer carries it as `lockCollateral` to
 it at once (up to 1.5× by the vault's default multiplier, face value for an
 account with no unsecured line yet). The success sheet shows Boost and the
 Pay later limit read back from the chain afterwards (`src/lib/boost.ts`,
-`src/components/boost-sheet.tsx`). There is no *Take out of Boost*: the
-deployed vault's `withdraw(amount)` pays `msg.sender` only and has no signed
-variant a relayer could carry, and a Polaris account holds no MON to call it
-itself; the sheet says taking dollars out isn't in the app yet.
+`src/components/boost-sheet.tsx`).
+
+*Take out of Boost* is the same sheet's other side (and a row or button of
+its own beside Add to Boost on the Credit line sheet and the desktop Credit
+page). It offers what `CollateralVault.withdrawable(owner)` says is free:
+everything in Boost, or nothing while a Pay in 4 plan is open, because the
+vault releases no collateral while any debt is outstanding (the sheet then
+says the Boost secures the plan). The amount is at least $0.10 and leaves
+either nothing or at least $0.10 behind; the sheet names exactly what the
+limit loses. One Face ID signs the vault's EIP-712 `Withdraw` (borrower,
+amount, the vault's `nonces(borrower)`, a deadline 15 minutes out) under the
+domain read from the vault itself (ERC-5267); the relayer carries it as
+`withdrawCollateral` to `CollateralVault.withdrawWithSig`, which pays the
+account and nobody else. "Taken out." shows Boost, the limit and the dollar
+balance read back from the chain. A vault that predates signed withdrawal,
+Monad testnet's today (the testnet contracts are frozen; the redeploy is in
+[`docs/DEPLOY-LATER.md`](../../docs/DEPLOY-LATER.md)), has no domain to
+read, and there the sheet says "Taking them out isn't available on this
+network yet."
 
 Without it there is no offline demo: every route shows one screen, "Polaris
 isn't configured on this build" (`src/components/not-configured.tsx`, in the

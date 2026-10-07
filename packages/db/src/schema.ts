@@ -234,6 +234,7 @@ export type RelayKind =
   | "repay"
   | "reauthorize"
   | "lockCollateral"
+  | "withdrawCollateral"
   | "cancelSubscription"
   | "transfer"
   | "registerMerchant"

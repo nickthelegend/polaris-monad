@@ -25,6 +25,7 @@ import { resetRateLimitsForTests } from "@/server/ratelimit";
 import { resetEligibilityForTests } from "@/server/sessions/sessions";
 import { resetSignersForTests } from "@/server/relayer/signer";
 import { resetNoncesForTests } from "@/server/relayer/submit";
+import { resetVaultForTests } from "@/server/vault";
 import { configureDispatcherForTests } from "@/server/webhooks/dispatcher";
 
 import { FakeChain } from "./fake-chain";
@@ -97,6 +98,7 @@ export function setupServer(env: Record<string, string> = {}): TestEnv {
   resetNoncesForTests();
   resetRateLimitsForTests();
   resetEligibilityForTests();
+  resetVaultForTests();
   // SQLite in memory: the store production runs on, fresh for every test.
   replaceStoreForTests(openSqliteStore(":memory:"));
   setMerchantVerifierForTests(null);

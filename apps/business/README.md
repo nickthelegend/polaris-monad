@@ -246,6 +246,7 @@ belongs to a checkout session, and one PolarisCheckout already settled.
 | `PolarisLoanEngine.repayWithSig` | borrower: `RepayIntent` | |
 | `PolarisCheckout.reauthorize` | borrower: ERC-2612 `Permit` to the loan engine | the contract checks spender, signer and that the value covers everything owed; the relayer refuses first when nothing is owed, the approval already covers it, or the permit is short |
 | `CollateralVault.lockWithPermit` | borrower: ERC-2612 `Permit` to the vault | the vault moves exactly the permitted amount into the borrower's own position, nowhere else; no fallback to a standing allowance (a secured Pay in 4 line with no MON) |
+| `CollateralVault.withdrawWithSig` | borrower: `Withdraw` (the vault's own EIP-712 domain) | take out of Boost with no MON: the vault pays the borrower, never the caller, and nothing while a Pay in 4 plan is open. The relay (`withdrawCollateral`) asks the vault itself whether it takes signed withdrawals (`src/server/vault.ts`): Monad testnet's vault predates them, so there it answers `withdraw_unavailable` before anything is signed or sent. In the policy builder and its tests; **not yet applied to the live Privy policy** (it needs the admin key and the testnet go: [`docs/DEPLOY-LATER.md`](../../docs/DEPLOY-LATER.md)) |
 | `MerchantRegistry.registerFor` / `updatePayoutAddressWithSig` | merchant's embedded wallet | the merchant signs name and payout address |
 | AUSD `transferWithAuthorization` | owner (withdrawals, payouts) | the owner signs `to` and `value` |
 

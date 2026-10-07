@@ -29,6 +29,7 @@ describe("EIP-712 structs the relayer verifies", () => {
     expect(DOMAIN_NAMES.send).toBe(contracts.DOMAIN_NAMES.PolarisSend?.name);
     expect(DOMAIN_NAMES.split).toBe(contracts.DOMAIN_NAMES.PolarisSplit?.name);
     expect(DOMAIN_NAMES.registry).toBe(contracts.DOMAIN_NAMES.MerchantRegistry?.name);
+    expect(DOMAIN_NAMES.vault).toBe(contracts.DOMAIN_NAMES.CollateralVault?.name);
   });
 
   it("sign automatic payouts with the token's own TransferWithAuthorization", () => {

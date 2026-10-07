@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 import type { Micros } from "../money";
+import type { Eip712Domain } from "../sign";
 
 /** Countries we draw a flag for. Anything else shows no badge. */
 export type CountryCode = "AR" | "BR" | "DE" | "GB" | "IN" | "KE" | "MX" | "NG" | "PH" | "US";
@@ -49,6 +50,19 @@ export type Boost = {
   multiplierBps: number;
   /** The vault's address, the spender of the permit that adds to Boost. */
   vault: Address;
+  /**
+   * `CollateralVault.withdrawable(owner)`: what can be taken out now. All of
+   * `locked`, or nothing while a Pay in 4 plan is open (the vault releases no
+   * collateral while any debt is outstanding).
+   */
+  withdrawable: Micros;
+  /**
+   * The vault's EIP-712 domain (ERC-5267) when it takes signed withdrawals
+   * (`withdrawWithSig`), which is what "Take out of Boost" signs under. Null
+   * on a vault that predates them (Monad testnet's today): the app then says
+   * taking out isn't available on this network yet.
+   */
+  takeOut: Eip712Domain | null;
   updatedAt: number;
 };
 

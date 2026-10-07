@@ -59,6 +59,9 @@ export function loadDeployment(env) {
   return {
     file,
     chainId: d.chainId,
+    // Whether the record's vault takes withdrawWithSig: written by deploy:monad and redeploy-vault:monad
+    // from the vault itself. Monad testnet's vault of 28 Sep 2026 predates it.
+    vaultWithdraw: Boolean(d.eip712?.CollateralVault),
     addresses: {
       checkout: at("PolarisCheckout"),
       payments: at("PolarisPayments"),

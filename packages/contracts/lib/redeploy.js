@@ -7,7 +7,8 @@
  * - CollateralVault (`redeployVault`): only ScoreManager's and the loan
  *   engine's vault pointers move (scripts/redeploy-vault.js,
  *   `redeploy-vault:monad`; test/metropolis/RedeployVault.test.js). Today's
- *   vault takes `lockWithPermit`, so a borrower securing a line needs no MON.
+ *   vault takes `lockWithPermit` and `withdrawWithSig`, so a borrower
+ *   securing a line, and taking the collateral out again, needs no MON.
  *
  * For the guardian: it deploys the current GuardianReceiver against the record's own loan
  * engine, forwarder and simulation transmitter, points PolarisCheckout at it
@@ -29,6 +30,7 @@ const { getAddress } = require("ethers");
 const tx = require("./tx");
 const { guardianThresholds } = require("./cre");
 const { GUARDIAN_VIEW, guardianRecordConfig, jsonSafe } = require("./deploy");
+const { TYPES, readDomain, domainJson } = require("./eip712");
 const { headSource, sameExecutable } = require("./verify");
 
 const FQN = "contracts/cre/GuardianReceiver.sol:GuardianReceiver";
@@ -136,11 +138,15 @@ async function redeployGuardian(hre, record, opts = {}, log = () => {}) {
 
 /**
  * Replace the record's CollateralVault with today's (which takes
- * `lockWithPermit`) and point ScoreManager and the loan engine at it. The new
- * vault gets the old one's multiplier, the loan engine as its engine and
- * seizer, and the same owner. The old vault stays on chain: whoever locked in
- * it can still withdraw (it still asks the loan engine for their debt), but it
- * no longer raises a limit, and a liquidation no longer seizes from it.
+ * `lockWithPermit` and `withdrawWithSig`) and point ScoreManager and the loan
+ * engine at it. The new vault gets the old one's multiplier, the loan engine
+ * as its engine and seizer, and the same owner; the record gains its EIP-712
+ * domain and `Withdraw` type (`eip712.CollateralVault`), which is how the
+ * relayer and the app tell a vault that takes signed withdrawals. Nothing
+ * locked in the old vault moves: it stays on chain, and whoever locked in it
+ * can still `withdraw` it there with their own transaction (it still asks the
+ * loan engine for their debt), but it no longer raises a limit, a liquidation
+ * no longer seizes from it, and the relayer can't take it out for them.
  *
  * Refuses before sending anything when the signer does not own ScoreManager
  * and the loan engine, or when the record's vault already runs today's code.
@@ -178,7 +184,7 @@ async function redeployVault(hre, record, opts = {}, log = () => {}) {
     txs.push({ nonce: sent.nonce, block: receipt.blockNumber, hash: receipt.hash, contract, call });
   };
 
-  log("CollateralVault (today's code: lockWithPermit)");
+  log("CollateralVault (today's code: lockWithPermit, withdrawWithSig)");
   const args = [owner.address, token];
   const factory = await ethers.getContractFactory("CollateralVault", owner);
   const d = await tx.deploy(factory, args);
@@ -206,6 +212,7 @@ async function redeployVault(hre, record, opts = {}, log = () => {}) {
     sourceCommit: source.commit,
     ...(source.dirty ? { sourceDirty: true } : {}),
   };
+  next.eip712 = { ...next.eip712, CollateralVault: { domain: domainJson(await readDomain(vault)), types: TYPES.CollateralVault } };
   next.redeploys = [
     ...(next.redeploys ?? []),
     {

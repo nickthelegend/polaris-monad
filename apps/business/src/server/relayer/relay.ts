@@ -31,6 +31,7 @@ import { consume, LIMITS } from "../ratelimit";
 import { dropAfterMs } from "../ingest/sync";
 import { ensureQuoted, orderKeyOf, openSessionForPayment } from "../sessions/sessions";
 import { periodSeconds } from "../sessions/params";
+import { vaultWithdrawDomain } from "../vault";
 import { MAX_SHARES, readSplit, requireSplitContract, shareNonce, SPLIT_MAX_EXPIRY, SPLIT_MIN_LIFETIME, splitIdOf } from "../split";
 import { carry, fromRecord, type RelayResult } from "./carry";
 import { address, bad, bytes32, deadline, field, signature, text, uint, vrs } from "./parse";
@@ -59,6 +60,7 @@ import { polarisDomain, TYPES, type Domain } from "./typed-data";
  * | `repay`              | borrower: RepayIntent      | PolarisLoanEngine.repayWithSig              |
  * | `reauthorize`        | borrower: Permit (engine)  | PolarisCheckout.reauthorize                 |
  * | `lockCollateral`     | borrower: Permit (vault)   | CollateralVault.lockWithPermit              |
+ * | `withdrawCollateral` | borrower: Withdraw         | CollateralVault.withdrawWithSig             |
  * | `cancelSubscription` | subscriber: CancelSubscription | PolarisPayments.cancelWithSignature     |
  * | `transfer`           | owner: TransferWithAuth.   | AUSD.transferWithAuthorization              |
  * | `createSplit`        | organiser: CreateSplit     | PolarisSplit.createSplit                    |
@@ -76,6 +78,7 @@ export const RELAY_TYPES = [
   "repay",
   "reauthorize",
   "lockCollateral",
+  "withdrawCollateral",
   "cancelSubscription",
   "transfer",
   "createSplit",
@@ -605,6 +608,68 @@ async function lockCollateral(body: Record<string, unknown>, chain: ChainConfig)
   return respond("lockCollateral", result, null);
 }
 
+/**
+ * Take out of Boost with no MON: the borrower signs CollateralVault's EIP-712
+ * `Withdraw` (borrower, amount, the vault's `nonces(borrower)`, a deadline
+ * within the hour) and the relayer sends `withdrawWithSig`, which pays the
+ * borrower and nobody else, under `withdraw`'s own rules. Refused before any
+ * gas when the network's vault predates signed withdrawal (Monad testnet's
+ * today: "not available on this network yet"), below the relayer's minimum,
+ * when it would strand less than the minimum in Boost, when the signature
+ * isn't the borrower's, when it's more than they have in Boost, or while
+ * their Boost secures a Pay in 4 plan (the vault releases nothing while any
+ * debt is outstanding).
+ */
+async function withdrawCollateral(body: Record<string, unknown>, chain: ChainConfig): Promise<RelayResponse> {
+  const vault = chain.contracts.vault;
+  if (!vault) throw new HttpError(409, "collateral_unavailable", "Boost isn't available on this network.");
+  const sig = signature(body, "signature");
+  const replayed = await replay("withdrawCollateral", relayIdOf("withdrawCollateral", sig));
+  if (replayed) return replayed;
+  const domain = await vaultWithdrawDomain(chain);
+  if (!domain) throw new HttpError(409, "withdraw_unavailable", "Taking dollars out of Boost isn't available on this network yet. They stay yours, in Boost.");
+  const borrower = address(body, "borrower");
+  const amount = uint(body, "amount");
+  if (amount === 0n) bad("amount", "amount must be more than zero.");
+  assertMinimum(amount, "amount");
+  const withdrawDeadline = deadline(uint(body, "deadline"), "deadline", { maxAheadSeconds: 3600 });
+  const client = publicClient();
+  const [nonce, locked, free] = await Promise.all([
+    client.readContract({ address: vault, abi: collateralVaultAbi, functionName: "nonces", args: [borrower] }) as Promise<bigint>,
+    client.readContract({ address: vault, abi: collateralVaultAbi, functionName: "lockedOf", args: [borrower] }) as Promise<bigint>,
+    client.readContract({ address: vault, abi: collateralVaultAbi, functionName: "withdrawable", args: [borrower] }) as Promise<bigint>,
+  ]);
+  await assertSigner(
+    borrower,
+    recoverTypedDataAddress({
+      domain,
+      types: TYPES.Withdraw,
+      primaryType: "Withdraw",
+      message: { borrower, amount, nonce, deadline: withdrawDeadline },
+      signature: sig,
+    }),
+    "take out",
+  );
+  if (amount > locked) throw new HttpError(409, "insufficient_collateral", "That's more than you have in Boost.", { param: "amount" });
+  if (amount > free) {
+    throw new HttpError(409, "collateral_in_use", "Your Boost secures a Pay in 4 plan, so it stays in until the plan is paid off.", { param: "amount" });
+  }
+  const left = locked - amount;
+  const min = getConfig().relayerLimits.minTransferUnits;
+  if (left > 0n && left < min) {
+    bad("amount", `That would leave less than ${formatUnits(min)} AUSD in Boost. Take it all out, or leave more.`);
+  }
+  countVerified(borrower, { open: true });
+  const result = await carry({
+    kind: "withdrawCollateral",
+    relayId: relayIdOf("withdrawCollateral", sig),
+    to: vault,
+    data: encodeFunctionData({ abi: collateralVaultAbi, functionName: "withdrawWithSig", args: [borrower, amount, withdrawDeadline, sig] }),
+    signer: borrower,
+  });
+  return respond("withdrawCollateral", result, null);
+}
+
 async function cancelSubscription(body: Record<string, unknown>, chain: ChainConfig): Promise<RelayResponse> {
   const subId = uint(body, "subId");
   const cancelDeadline = deadline(uint(body, "deadline"), "deadline", { maxAheadSeconds: 3600 });
@@ -852,6 +917,8 @@ export async function handleRelay(body: Record<string, unknown>): Promise<RelayR
       return reauthorize(body, chain);
     case "lockCollateral":
       return lockCollateral(body, chain);
+    case "withdrawCollateral":
+      return withdrawCollateral(body, chain);
     case "cancelSubscription":
       return cancelSubscription(body, chain);
     case "transfer":

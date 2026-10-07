@@ -15,8 +15,15 @@ export const sendAbi = parseAbi([
   "function keyUsed(address linkKey) view returns (bool)",
 ]);
 
-/** CollateralVault: the dollars an account has locked in Boost, and what each dollar adds to the limit. */
+/**
+ * CollateralVault: the dollars an account has locked in Boost, what each
+ * dollar adds to the limit, what it can take out now (all of it, or nothing
+ * while a Pay in 4 plan is open), and the nonce its next Withdraw signs. The
+ * vault's EIP-712 domain is read with ERC-5267 (`sign/domain.ts`).
+ */
 export const vaultAbi = parseAbi([
   "function lockedOf(address user) view returns (uint256)",
   "function creditMultiplierBps() view returns (uint256)",
+  "function withdrawable(address user) view returns (uint256)",
+  "function nonces(address) view returns (uint256)",
 ]);

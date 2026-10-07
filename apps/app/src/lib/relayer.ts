@@ -1,11 +1,11 @@
 import type { Address, Hex, TypedDataDomain } from "viem";
 import { ApiError, api } from "./api";
-import { lockCollateralBody } from "./boost";
+import { lockCollateralBody, withdrawCollateralBody } from "./boost";
 import { receiptUrl } from "./chain";
 import { notifyDataChanged } from "./data/changes";
 import type { PaymentLink, Person } from "./data/types";
 import type { Micros } from "./money";
-import type { Authorization, Cancel, CancelSubscription, Claim, CloseSplit, CreateSplit, Open, Permit, PlanIntent, RepayIntent, SubscribeIntent } from "./sign";
+import type { Authorization, Cancel, CancelSubscription, Claim, CloseSplit, CreateSplit, Open, Permit, PlanIntent, RepayIntent, SubscribeIntent, Withdraw } from "./sign";
 
 /**
  * The relayer carries signatures to the chain (plan §5.3). The app signs; the
@@ -98,6 +98,12 @@ export type ReauthorizeRequest = { buyer: Address; permit: Signed<Permit> };
 export type LockCollateralRequest = { permit: Signed<Permit> };
 
 /**
+ * CollateralVault.withdrawWithSig: take out of Boost. The borrower's EIP-712
+ * Withdraw under the vault's domain; the vault pays the borrower only.
+ */
+export type WithdrawCollateralRequest = { withdraw: Signed<Withdraw> };
+
+/**
  * PolarisSplit.createSplit: the organiser's CreateSplit. The split's words
  * never go to the relayer, only their hash (inside `creation`).
  */
@@ -124,6 +130,7 @@ export interface Relayer {
   payEarly(request: PayEarlyRequest): Promise<RelayReceipt>;
   reauthorize(request: ReauthorizeRequest): Promise<RelayReceipt>;
   lockCollateral(request: LockCollateralRequest): Promise<RelayReceipt>;
+  withdrawCollateral(request: WithdrawCollateralRequest): Promise<RelayReceipt>;
 }
 
 export type RelayErrorReason = "insufficient-funds" | "over-limit" | "invalid-signature" | "already-settled" | "expired" | "unavailable";
@@ -164,6 +171,9 @@ const REASONS: Record<string, RelayErrorReason> = {
   insufficient_balance: "insufficient-funds",
   wrong_amount: "invalid-signature",
   collateral_unavailable: "unavailable",
+  withdraw_unavailable: "unavailable",
+  insufficient_collateral: "insufficient-funds",
+  collateral_in_use: "over-limit",
   transaction_reverted: "unavailable",
 };
 
@@ -314,4 +324,5 @@ export const relayer: Relayer = {
     }),
   reauthorize: ({ buyer, permit }) => relay({ type: "reauthorize", buyer, permit: permitBody(permit) }),
   lockCollateral: ({ permit }) => relay(lockCollateralBody(permit)),
+  withdrawCollateral: ({ withdraw }) => relay(withdrawCollateralBody(withdraw)),
 };

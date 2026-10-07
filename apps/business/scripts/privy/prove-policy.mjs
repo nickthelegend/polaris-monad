@@ -16,7 +16,7 @@ import { banner, flag, loadDeployment, loadEnv, privyClient } from "./lib.mjs";
 
 const env = loadEnv();
 const deployment = loadDeployment(env);
-const { addresses, chainId } = deployment;
+const { addresses, chainId, vaultWithdraw } = deployment;
 const buyer = "0x1111111111111111111111111111111111111111";
 const merchant = "0x2222222222222222222222222222222222222222";
 
@@ -59,6 +59,23 @@ if (addresses.vault) {
       expect: "denied",
       what: "CollateralVault.seize (the loan engine's call, not the relayer's)",
       tx: { to: addresses.vault, data: encodeFunctionData({ abi: collateralVaultAbi, functionName: "seize", args: [buyer, 1n, merchant] }) },
+    },
+  );
+}
+
+// Take out of Boost: only where the vault has withdrawWithSig (a vault redeployed for it; not Monad testnet's
+// today), so a proof against today's testnet policy isn't asked about a call its vault can't take.
+if (addresses.vault && vaultWithdraw) {
+  const take = (amount) => encodeFunctionData({ abi: collateralVaultAbi, functionName: "withdrawWithSig", args: [buyer, amount, 4_000_000_000n, "0x"] });
+  cases.splice(
+    2,
+    0,
+    { expect: "allowed", what: `CollateralVault.withdrawWithSig of ${minAmountUnits} base units (take out of Boost, no MON)`, tx: { to: addresses.vault, data: take(minAmountUnits) } },
+    { expect: "denied", what: "CollateralVault.withdrawWithSig of 0", tx: { to: addresses.vault, data: take(0n) } },
+    {
+      expect: "denied",
+      what: "CollateralVault.withdraw (pays its caller: the relayer)",
+      tx: { to: addresses.vault, data: encodeFunctionData({ abi: collateralVaultAbi, functionName: "withdraw", args: [minAmountUnits] }) },
     },
   );
 }

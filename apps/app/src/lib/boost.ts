@@ -1,7 +1,7 @@
 import type { Address, Hex, TypedDataDomain } from "viem";
-import { buildPermit, type Permit, type Typed } from "./sign/builders.ts";
+import { buildPermit, buildWithdraw, type Permit, type Typed, type Withdraw } from "./sign/builders.ts";
 import type { Eip712Domain } from "./sign/domain.ts";
-import type { permitTypes } from "./sign/types.ts";
+import type { permitTypes, withdrawTypes } from "./sign/types.ts";
 import { type Micros, usd } from "./money.ts";
 
 /**
@@ -16,10 +16,15 @@ import { type Micros, usd } from "./money.ts";
  * `lockCollateral`). The vault moves the dollars only into the buyer's own
  * position, so the permit can't send them anywhere else.
  *
- * Taking dollars out is `CollateralVault.withdraw(amount)`, which pays
- * `msg.sender` only: the deployed vault has no signed variant a relayer could
- * carry, and a Polaris account holds no MON to call it itself. So the app
- * offers no "Take out of Boost" until the vault gains one.
+ * Taking dollars out is one EIP-712 `Withdraw` under the vault's own domain
+ * (borrower, amount, the vault's `nonces(borrower)`, a deadline), which the
+ * relayer carries to `CollateralVault.withdrawWithSig` (type
+ * `withdrawCollateral`). The vault pays the borrower and nobody else, and
+ * only what `withdrawable(owner)` says is free: everything locked, or nothing
+ * while any Pay in 4 plan is open (the vault releases nothing while debt is
+ * outstanding). A vault that predates `withdrawWithSig` (Monad testnet's
+ * today) has no domain to sign under, and then the app says taking out
+ * isn't available on this network yet.
  *
  * Pure functions only (no I/O), so test/boost.test.ts checks them as they are.
  */
@@ -122,4 +127,80 @@ export function lockCollateralBody(permit: { message: Permit; signature: Hex; do
     amount: value.toString(),
     permit: { value: value.toString(), deadline: deadline.toString(), signature: permit.signature },
   };
+}
+
+/* ── Take out of Boost ──────────────────────────────────────────────────── */
+
+/** How long the Withdraw stays good. The vault refuses one more than an hour ahead. */
+export const TAKE_OUT_SIGNATURE_SECONDS = 15n * 60n;
+
+/** The account's Boost, as far as taking it out goes (`getBoost`). */
+export type TakeOutBoost = {
+  /** `CollateralVault.lockedOf(owner)`. */
+  locked: Micros;
+  /** `CollateralVault.withdrawable(owner)`: all of it, or 0 while a Pay in 4 plan is open. */
+  withdrawable: Micros;
+  /** The vault's EIP-712 domain when it takes `withdrawWithSig`; null on a vault that predates it. */
+  takeOut: Eip712Domain | null;
+};
+
+/**
+ * What the Take out sheet can offer: `unsupported` (this network's vault
+ * predates signed withdrawal), `empty` (nothing in Boost), `in-use` (it
+ * secures an open Pay in 4 plan, so the vault releases none of it), `ready`.
+ */
+export function takeOutState(boost: TakeOutBoost): "unsupported" | "empty" | "in-use" | "ready" {
+  if (!boost.takeOut) return "unsupported";
+  if (boost.locked === 0n) return "empty";
+  if (boost.withdrawable === 0n) return "in-use";
+  return "ready";
+}
+
+/**
+ * Why this amount can't be taken out, in the buyer's words, or null when it
+ * can. The same refusals as the relayer and the vault: more than is free, the
+ * relayer's minimum, and no dust under the minimum left behind (the relayer
+ * couldn't carry it out later).
+ */
+export function takeOutProblem(amount: Micros, boost: Pick<TakeOutBoost, "locked" | "withdrawable">): string | null {
+  if (amount <= 0n) return "Enter an amount";
+  if (amount > boost.locked) return "That's more than you have in Boost";
+  if (amount > boost.withdrawable) return "Your Boost secures a Pay in 4 plan";
+  if (amount < BOOST_MIN) return `The smallest amount is ${usd(BOOST_MIN)}`;
+  const left = boost.locked - amount;
+  if (left > 0n && left < BOOST_MIN) return `Leave at least ${usd(BOOST_MIN)} in Boost, or take it all out`;
+  return null;
+}
+
+/**
+ * What taking `amount` out removes from the limit: the boost
+ * `ScoreManager.creditLimitOf` adds now, less what it adds after. The mirror
+ * of `boostRaise`, with the contracts' own integer divisions.
+ */
+export function boostDrop(amount: Micros, terms: BoostTerms): Micros {
+  const locked = terms.locked ?? 0n;
+  if (amount <= 0n || amount > locked) return 0n;
+  return boostOf(locked, terms.multiplierBps, terms.atFaceValue) - boostOf(locked - amount, terms.multiplierBps, terms.atFaceValue);
+}
+
+/** The Withdraw the buyer signs: borrower the account, under the vault's own domain. */
+export function buildTakeOut(domain: Eip712Domain, input: Withdraw): Typed<typeof withdrawTypes, "Withdraw", Withdraw> {
+  return buildWithdraw(domain, input);
+}
+
+/**
+ * The `POST /api/relay` body for `withdrawCollateral`
+ * (apps/business/src/server/relayer/relay.ts): the borrower, the amount, the
+ * deadline and the signature, every integer as a decimal string. The relayer
+ * reads the nonce from the vault and rebuilds the message from these.
+ */
+export function withdrawCollateralBody(signed: { message: Withdraw; signature: Hex }): {
+  type: "withdrawCollateral";
+  borrower: Address;
+  amount: string;
+  deadline: string;
+  signature: Hex;
+} {
+  const { borrower, amount, deadline } = signed.message;
+  return { type: "withdrawCollateral", borrower, amount: amount.toString(), deadline: deadline.toString(), signature: signed.signature };
 }

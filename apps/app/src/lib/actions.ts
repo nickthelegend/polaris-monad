@@ -1,7 +1,7 @@
 import { type Address, type Hex, type LocalAccount, parseAbi, zeroAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { api, apiConfigured } from "./api";
-import { BOOST_PERMIT_SECONDS, boostAmountProblem, buildBoostPermit } from "./boost";
+import { BOOST_PERMIT_SECONDS, boostAmountProblem, buildBoostPermit, buildTakeOut, TAKE_OUT_SIGNATURE_SECONDS, type TakeOutBoost, takeOutProblem } from "./boost";
 import { owedOnOpenPlans } from "./collection";
 import { publicClient } from "./chain";
 import type { PaymentLink, Person, Plan } from "./data/types";
@@ -457,4 +457,27 @@ export async function addToBoost(account: LocalAccount, amount: Micros, opts: { 
   const [domain, nonce] = await Promise.all([getDomain("ausd"), readNonce("ausd", account.address)]);
   const permit = await sign(account, buildBoostPermit(domain, { owner: account.address, vault, amount, nonce, deadline: now() + BOOST_PERMIT_SECONDS }));
   return relayer.lockCollateral({ permit });
+}
+
+const vaultNoncesAbi = parseAbi(["function nonces(address) view returns (uint256)"]);
+
+/**
+ * Take out of Boost: one EIP-712 Withdraw under the vault's own domain
+ * (borrower the account, the amount, the vault's `nonces(account)`, a
+ * deadline 15 minutes out), which the relayer carries to
+ * `CollateralVault.withdrawWithSig` (lib/boost.ts). The vault pays the account
+ * and nobody else. `boost` is what the sheet shows (`getBoost`): on a vault
+ * that predates signed withdrawal (`takeOut` null), or for an amount that
+ * isn't free to take out, nothing is signed.
+ */
+export async function takeOutOfBoost(account: LocalAccount, amount: Micros, boost: TakeOutBoost): Promise<RelayReceipt> {
+  if (!boost.takeOut) throw new RelayError("unavailable", "Taking dollars out of Boost isn't available on this network yet.");
+  const problem = takeOutProblem(amount, boost);
+  if (problem) throw new RelayError(problem.includes("secures") ? "over-limit" : problem.includes("more than") ? "insufficient-funds" : "invalid-signature", `${problem}.`);
+  const network = getNetwork();
+  const vault = network ? (await network).vault : null;
+  if (!vault) throw new RelayError("unavailable", "Boost isn't available on this network.");
+  const nonce = await publicClient().readContract({ address: vault, abi: vaultNoncesAbi, functionName: "nonces", args: [account.address] });
+  const withdraw = await sign(account, buildTakeOut(boost.takeOut, { borrower: account.address, amount, nonce, deadline: now() + TAKE_OUT_SIGNATURE_SECONDS }));
+  return relayer.withdrawCollateral({ withdraw });
 }

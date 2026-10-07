@@ -13,6 +13,7 @@ import {
   repayIntentTypes,
   subscribeIntentTypes,
   transferWithAuthorizationTypes,
+  withdrawTypes,
 } from "./types.ts";
 
 /**
@@ -82,6 +83,9 @@ export type CreateSplit = { organiser: Address; salt: Hex; amounts: bigint[]; me
 export type CloseSplit = { splitId: Hex; deadline: bigint };
 
 export type RepayIntent = { loanId: bigint; amount: bigint; expectedRepaid: bigint; nonce: bigint; deadline: bigint };
+
+/** CollateralVault.withdrawWithSig: take dollars out of Boost; the vault pays `borrower` only. */
+export type Withdraw = { borrower: Address; amount: bigint; nonce: bigint; deadline: bigint };
 
 /** PolarisCheckout.openPlan: signed by the buyer together with a Permit. */
 export function buildPlanIntent(
@@ -172,6 +176,12 @@ export function buildRepayIntent(
   message: RepayIntent,
 ): Typed<typeof repayIntentTypes, "RepayIntent", RepayIntent> {
   return { domain, types: repayIntentTypes, primaryType: "RepayIntent", message };
+}
+
+/** CollateralVault.withdrawWithSig: signed by the borrower, under the vault's own domain. */
+export function buildWithdraw(domain: Eip712Domain, message: Withdraw): Typed<typeof withdrawTypes, "Withdraw", Withdraw> {
+  if (message.amount <= 0n) throw new RangeError("amount must be more than zero");
+  return { domain, types: withdrawTypes, primaryType: "Withdraw", message };
 }
 
 /** PolarisPayments.cancelWithSignature: signed by the subscriber. */

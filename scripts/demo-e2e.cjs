@@ -11,7 +11,9 @@
 // CRE underwriting workflow, local trigger; without provider keys it opens no line and says so, and the buyer then
 // adds enough to Boost in the app, one Face ID, for the line to cover the plan) -> Pay in 4, checked on chain;
 // both shop orders marked paid
-// by Polaris webhooks; the merchant's dashboard showing the payments, the plan and its
+// by Polaris webhooks; while that plan is open, Take out of Boost offers nothing (the vault releases nothing while
+// debt is outstanding), and once the collections run has repaid it the buyer takes $25 out of Boost in the app, one
+// Face ID, checked on chain at its block (DEMO_FAST_PLANS=1 repays it in about five minutes); the merchant's dashboard showing the payments, the plan and its
 // on-chain registration; then split the bill (scripts/demo-e2e-split.cjs: one link, four
 // people, shares paid, the split closed; DEMO_E2E_SPLIT=0 skips it). Screenshots go to
 // docs/demo (OUT to change it). Exits 1 if a step fails.
@@ -294,6 +296,131 @@ async function boostForPlan(app, sessionId) {
   );
   await app.keyboard.press("Escape").catch(() => {});
   return quoteAfter.withinLimit;
+}
+
+/** Open the Boost sheet on Take out from the Credit page (desktop: the side panel's button; phone: the Credit line's row). */
+async function openTakeOut(app) {
+  await app.goto(APP + "/credit", { waitUntil: "networkidle", timeout: POPUP_MS });
+  await settle(app, 3000);
+  const entry = app.getByRole("button", { name: /Take out of Boost/ }).filter({ visible: true });
+  await until("Take out of Boost on the Credit page", async () => (await entry.count()) > 0, 60000, 500);
+  await entry.first().click();
+  const sheet = app.getByRole("dialog").filter({ hasText: "Move dollars from Boost back to your dollar account." }).last();
+  await sheet.waitFor({ timeout: 30000 });
+  // Boost and what is free to take out are in once "Free to take out" shows a figure.
+  await until("Boost in the Take out sheet", async () => /Free to take out\s*\$/.test(await sheet.innerText()), 60000, 500).catch(() => {});
+  return sheet;
+}
+
+/**
+ * Take out of Boost while the Pay in 4 plan the Boost secures is open: CollateralVault releases nothing while any
+ * debt is outstanding, so the sheet must say so and offer no amount, and the chain must agree (withdrawable 0).
+ */
+async function takeOutWhilePlanOpen(app) {
+  const name = "Take out: while the plan is open, the sheet says Boost secures it and offers no amount; the vault agrees (withdrawable 0)";
+  const buyer = await buyerAddress(app, privateKeyToAccount);
+  if (!buyer || !CONTRACTS.CollateralVault) return skip(name, !buyer ? "no buyer account" : "no CollateralVault in this run");
+  const [locked, debt] = await Promise.all([read("CollateralVault", "lockedOf", [buyer]), read("PolarisLoanEngine", "activeDebtOf", [buyer])]);
+  if (locked === 0n || debt === 0n) return skip(name, locked === 0n ? "nothing in Boost (the line came from underwriting)" : "the plan was already repaid");
+  const sheet = await openTakeOut(app);
+  const said = await until("the plan-secures-Boost line", async () => /secures your Pay in 4 plan/.test(await sheet.innerText()), 30000, 500).catch(() => false);
+  await sleep(600);
+  await shot(app, "23-takeout-0-plan-open");
+  const keypad = await sheet.getByRole("group", { name: "Keypad" }).count();
+  const withdrawable = await read("CollateralVault", "withdrawable", [buyer]);
+  step(name, Boolean(said) && keypad === 0 && withdrawable === 0n, `lockedOf ${dollars(locked)}, activeDebtOf ${dollars(debt)}, withdrawable ${dollars(withdrawable)}`);
+  await app.keyboard.press("Escape").catch(() => {});
+}
+
+/**
+ * Take out of Boost once the plan is repaid (DEMO_FAST_PLANS: four instalments a minute apart, collected by the CRE
+ * collections workflow): a few dollars, in the app's own UI, one Face ID signing CollateralVault's Withdraw, which
+ * the relayer carries to withdrawWithSig. Checked on chain at the withdrawal's own block: the vault's lockedOf and
+ * its dollars fell by the amount, the buyer's dollars rose by it, the relayer (not the buyer) sent it, and the buyer
+ * holds no MON and has sent nothing.
+ */
+const TAKE_OUT = 25_000_000n;
+async function takeOutAfterRepaid(app) {
+  const names = [
+    `Take out: the buyer took ${dollars(TAKE_OUT)} out of Boost with one Face ID; on chain the vault paid the buyer exactly that, the relayer sent it, the buyer holds 0 MON`,
+    "Take out: the Taken out. screen shows Boost, the Pay later limit and the dollar balance read back from the chain",
+  ];
+  const buyer = await buyerAddress(app, privateKeyToAccount);
+  if (!buyer || !CONTRACTS.CollateralVault) return names.forEach((n) => skip(n, !buyer ? "no buyer account" : "no CollateralVault in this run"));
+  const locked = await read("CollateralVault", "lockedOf", [buyer]);
+  if (locked < TAKE_OUT) return names.forEach((n) => skip(n, `${dollars(locked)} in Boost (the line came from underwriting, or no Boost)`));
+  if (!demo.fastPlans && (await read("PolarisLoanEngine", "activeDebtOf", [buyer])) > 0n) {
+    return names.forEach((n) => skip(n, "the plan Boost secures is still open (instalments a week apart without DEMO_FAST_PLANS=1)"));
+  }
+  const repaid = await until("the Pay in 4 plan repaid by the collections run", async () => (await read("PolarisLoanEngine", "activeDebtOf", [buyer])) === 0n, 600000, 5000).catch(() => false);
+  if (!repaid) {
+    const owed = await read("PolarisLoanEngine", "activeDebtOf", [buyer]);
+    names.forEach((n) => step(n, false, `activeDebtOf ${dollars(owed)} after 10 minutes`));
+    return;
+  }
+  const from = await chain.getBlockNumber();
+  const sheet = await openTakeOut(app);
+  await until("the keypad in the Take out sheet", async () => (await sheet.getByRole("group", { name: "Keypad" }).count()) > 0, 30000, 500).catch(() => {});
+  const keypad = sheet.getByRole("group", { name: "Keypad" });
+  for (const digit of String(TAKE_OUT / 1_000_000n)) await keypad.getByRole("button", { name: digit, exact: true }).click();
+  await sleep(600);
+  await shot(app, "24-takeout-1-sheet");
+  await sheet.getByRole("button", { name: "Take out", exact: true }).click();
+  await confirmInPopup(app, "24-takeout-2");
+  const shown = await until("Taken out.", async () => (await app.getByText("Taken out.").count()) > 0, 120000, 500).catch(() => false);
+  await sleep(1200);
+  await shot(app, "24-takeout-3-taken-out");
+  const screen = shown ? (await app.getByRole("dialog").last().innerText().catch(() => "")).replace(/\s+/g, " ") : "";
+
+  // The withdrawal's own log, then every figure at its block and the block before (anvil mines one transaction a block).
+  const vaultAbi = abiOf("CollateralVault");
+  const withdrawn = await until("CollateralWithdrawn for the buyer", async () => {
+    const logs = await chain.getContractEvents({ address: CONTRACTS.CollateralVault, abi: vaultAbi, eventName: "CollateralWithdrawn", args: { user: buyer }, fromBlock: from });
+    return logs.at(-1) ?? null;
+  }, 60000, 1000).catch(() => null);
+  if (!withdrawn) {
+    step(names[0], false, `no CollateralWithdrawn for ${buyer} since block ${from}`);
+    step(names[1], false, screen.slice(0, 200));
+    return;
+  }
+  const at = withdrawn.blockNumber;
+  const before = at - 1n;
+  const readAt = (name, functionName, args, blockNumber) => chain.readContract({ address: CONTRACTS[name], abi: abiOf(name), functionName, args, blockNumber });
+  const [lockedBefore, lockedAfter, vaultBefore, vaultAfter, buyerBefore, buyerAfter, tx, mon, sent, limit] = await Promise.all([
+    readAt("CollateralVault", "lockedOf", [buyer], before),
+    readAt("CollateralVault", "lockedOf", [buyer], at),
+    readAt("Stablecoin", "balanceOf", [CONTRACTS.CollateralVault], before),
+    readAt("Stablecoin", "balanceOf", [CONTRACTS.CollateralVault], at),
+    readAt("Stablecoin", "balanceOf", [buyer], before),
+    readAt("Stablecoin", "balanceOf", [buyer], at),
+    chain.getTransaction({ hash: withdrawn.transactionHash }),
+    chain.getBalance({ address: buyer }),
+    chain.getTransactionCount({ address: buyer }),
+    read("ScoreManager", "creditLimitOf", [buyer]),
+  ]);
+  const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
+  step(
+    names[0],
+    withdrawn.args.amount === TAKE_OUT &&
+      lockedBefore - lockedAfter === TAKE_OUT &&
+      vaultBefore - vaultAfter === TAKE_OUT &&
+      buyerAfter - buyerBefore === TAKE_OUT &&
+      same(tx.to, CONTRACTS.CollateralVault) &&
+      !same(tx.from, buyer) &&
+      tx.input.startsWith(viem.toFunctionSelector("withdrawWithSig(address,uint256,uint256,bytes)")) &&
+      mon === 0n &&
+      sent === 0,
+    `block ${at}: lockedOf ${dollars(lockedBefore)} -> ${dollars(lockedAfter)}, the vault's dollars -${dollars(vaultBefore - vaultAfter)}, ` +
+      `the buyer's +${dollars(buyerAfter - buyerBefore)}; sent by ${tx.from} (withdrawWithSig); the buyer holds ${mon} MON and sent ${sent} transactions`,
+  );
+  const nowLocked = await read("CollateralVault", "lockedOf", [buyer]);
+  const nowBalance = await read("Stablecoin", "balanceOf", [buyer]);
+  step(
+    names[1],
+    Boolean(shown) && screen.includes(dollars(nowLocked)) && screen.includes(dollars(limit)) && screen.includes(dollars(nowBalance)),
+    screen.slice(0, 240),
+  );
+  await app.keyboard.press("Escape").catch(() => {});
 }
 
 /**
@@ -666,6 +793,9 @@ async function payIn4Plan(app, page, popup) {
     step("Collections: the CRE collections workflow collected the first instalment on chain (a minute after checkout)", Boolean(paid), paid ? `${paid[0].installmentsPaid} of ${paid[0].installments} paid` : "");
   }
 
+  // ── Take out of Boost, while the plan it secures is open: nothing to take ──
+  if (planOpened) await takeOutWhilePlanOpen(app);
+
   // ── Subscribe: the Coffee Club, monthly, in the Polaris popup ──────────
   {
     const page = await context.newPage();
@@ -865,6 +995,13 @@ async function payIn4Plan(app, page, popup) {
       await buyerPage.close().catch(() => {});
     }
   }
+
+  // ── Take out of Boost, once the plan is repaid: some dollars back, one Face ID, no MON ──
+  if (planOpened) await takeOutAfterRepaid(app);
+  else for (const n of [
+    `Take out: the buyer took ${dollars(TAKE_OUT)} out of Boost with one Face ID; on chain the vault paid the buyer exactly that, the relayer sent it, the buyer holds 0 MON`,
+    "Take out: the Taken out. screen shows Boost, the Pay later limit and the dollar balance read back from the chain",
+  ]) skip(n, `no Pay in 4 plan opened (no credit line): ${noLineBecause}`);
 
   // ── Split the bill: four people, one link (scripts/demo-e2e-split.cjs; `pnpm demo:e2e:split` runs it alone) ──
   if (process.env.DEMO_E2E_SPLIT !== "0") {

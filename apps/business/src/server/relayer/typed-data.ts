@@ -103,6 +103,14 @@ export const TYPES = {
       { name: "deadline", type: "uint256" },
     ],
   },
+  Withdraw: {
+    Withdraw: [
+      { name: "borrower", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ],
+  },
   Registration: {
     Registration: [
       { name: "merchant", type: "address" },
@@ -131,6 +139,8 @@ export const DOMAIN_NAMES = {
   send: "PolarisSend",
   split: "PolarisSplit",
   registry: "MerchantRegistry",
+  /** Only a vault with `withdrawWithSig` (relay.ts `vaultWithdrawDomain`); Monad testnet's of 28 Sep 2026 has none. */
+  vault: "CollateralVault",
 } as const;
 
 export type Domain = { name: string; version: string; chainId: number; verifyingContract: Address };

@@ -55,6 +55,7 @@ describe("Published interfaces", () => {
         PolarisSend: await (await ethers.getContractFactory("PolarisSend")).deploy(ausd),
         PolarisSplit: await (await ethers.getContractFactory("PolarisSplit")).deploy(ausd),
         MerchantRegistry: await (await ethers.getContractFactory("MerchantRegistry")).deploy(owner.address),
+        CollateralVault: await (await ethers.getContractFactory("CollateralVault")).deploy(owner.address, ausd),
       });
     });
 
@@ -71,6 +72,7 @@ describe("Published interfaces", () => {
         ["PolarisSplit", "CLOSE_TYPEHASH", "PolarisSplit", "CloseSplit"],
         ["MerchantRegistry", "REGISTRATION_TYPEHASH", "MerchantRegistry", "Registration"],
         ["MerchantRegistry", "PAYOUT_UPDATE_TYPEHASH", "MerchantRegistry", "PayoutUpdate"],
+        ["CollateralVault", "WITHDRAW_TYPEHASH", "CollateralVault", "Withdraw"],
         ["MockAUSD", "RECEIVE_WITH_AUTHORIZATION_TYPEHASH", "Stablecoin", "ReceiveWithAuthorization"],
         ["MockAUSD", "TRANSFER_WITH_AUTHORIZATION_TYPEHASH", "Stablecoin", "TransferWithAuthorization"],
       ];

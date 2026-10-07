@@ -73,6 +73,7 @@ contracts:
       - event: "CollateralWithdrawn(address indexed user, uint256 amount, uint256 newTotal)"
       - event: "LoanEngineSet(address indexed engine)"
       - event: "MultiplierChanged(uint256 bps)"
+      - event: "NonceInvalidated(address indexed borrower, uint256 nonce)"
       - event: "OwnershipTransferred(address indexed previousOwner, address indexed newOwner)"
       - event: "SeizerSet(address indexed seizer, bool allowed)"
   - name: BatchSettlement
