@@ -206,13 +206,13 @@ Each task: objective · acceptance · verify · status.
   balance read shown as $0, B5 tiles missing fresh payments, B6 clipped row
   menu, B11 375 px overflow and duplicate ticks) are being fixed (P4.4).
   375 px ran in Playwright's Chromium (the Chrome window wouldn't resize)
-- **P4.4 Fix R1 and run R2.** · IN PROGRESS
+- **P4.4 Fix R1 and run R2.** · DONE (7 Oct): all six R1 FAILs fixed; R2 52 PASS, 0 FAIL, 28 UNTESTED (B11 fixed again in `0ad4e88` after R2 found the settings card)
 ### P5 Quality loop
 
 - **P5.1 First gate** on `metropolis/integrate`: 29/29 test, typecheck, lint
   green; contracts 611; Slither triaged ([SLITHER.md](packages/contracts/SLITHER.md));
   secret scan clean. · DONE
-- **P5.2 Re-run after P1–P4** and the gap grep. · NOT STARTED
+- **P5.2 Re-run after P1–P4** and the gap grep. · DONE (7 Oct): 33/33 checks green on the merged tree; the gap grep finds only test seams, comments and the real names of Chainlink's and the testnet's contracts
 
 ## 4. Gap audit (from the code, 6 Oct)
 
