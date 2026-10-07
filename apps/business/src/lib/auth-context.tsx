@@ -34,6 +34,12 @@ export type TypedDataInput = {
 export type WalletActions = {
   /** The embedded payout wallet, once Privy has created it. */
   address: `0x${string}` | null;
+  /**
+   * What signs for this wallet: Privy's embedded wallet behind the merchant's
+   * sign-in, `demo:local`'s throwaway key for this run, or nothing (no sign-in
+   * configured). Settings says which.
+   */
+  signer: "privy" | "local" | "none";
   ready: boolean;
   signTypedData: (data: TypedDataInput, ui: { title: string; buttonText: string }) => Promise<`0x${string}`>;
   addPayoutSigner: (signerId: string, policyIds: string[]) => Promise<void>;
@@ -53,6 +59,13 @@ export type AuthState = {
 };
 
 export const AuthContext = createContext<AuthState | null>(null);
+
+/** What Settings says signs the merchant's withdrawals and registration. */
+export const SIGNER_LABEL: Record<WalletActions["signer"], string> = {
+  privy: "Your sign-in's embedded wallet (Privy)",
+  local: "This demo run's local key (demo:local)",
+  none: "Nothing yet: sign-in isn't configured",
+};
 
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);

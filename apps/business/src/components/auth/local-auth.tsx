@@ -87,6 +87,7 @@ export function LocalAuthProvider({ children }: { children: ReactNode }) {
       retry: () => window.location.reload(),
       wallet: {
         address: LOCAL_SESSION_WALLET,
+        signer: "local",
         ready: true,
         signTypedData,
         addPayoutSigner: unavailable,

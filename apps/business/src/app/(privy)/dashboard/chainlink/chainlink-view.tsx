@@ -82,7 +82,7 @@ export function ChainlinkView() {
           </p>
           <div className="mt-5 grid gap-4">
             {data.workflows.map((w) => (
-              <WorkflowPanel key={w.key} workflow={w} />
+              <WorkflowPanel key={w.key} workflow={w} localRun={data.delivery.forwarderKind === "local"} />
             ))}
           </div>
 
@@ -97,7 +97,7 @@ export function ChainlinkView() {
 
 function DeliveryPill({ data }: { data: ChainlinkOverview }) {
   const kind = data.delivery.forwarderKind;
-  const text = kind === "production" ? "Deployed on the DON" : kind === "simulation" ? "simulate --broadcast" : kind === "local" ? "Local chain" : "Not deployed";
+  const text = kind === "production" ? "Deployed on the DON" : kind === "simulation" ? "simulate --broadcast" : kind === "local" ? "Local run" : "Not deployed";
   return (
     <StatusPill tone={kind === "production" ? "lime" : kind === "simulation" ? "teal" : "neutral"} size="sm" title={deliveryLabel(kind)} className="hidden sm:inline-flex">
       {text}
@@ -320,7 +320,7 @@ function tagFor(key: WorkflowKey, run: ChainlinkRun): { tag: string; tone: Statu
   return { tag: "Report", tone: "neutral" };
 }
 
-function WorkflowPanel({ workflow: w }: { workflow: ChainlinkWorkflow }) {
+function WorkflowPanel({ workflow: w, localRun }: { workflow: ChainlinkWorkflow; localRun: boolean }) {
   const now = useNow(1_000);
   const items: RunItem[] = w.runs.map((run) => {
     const line = describeRun(w.key, run);
@@ -372,8 +372,14 @@ function WorkflowPanel({ workflow: w }: { workflow: ChainlinkWorkflow }) {
             <div className="grid place-items-center rounded-[18px] border border-dashed border-ui-hairline-strong px-6 py-10 text-center">
               <p className="text-[15px] font-medium">No reports yet</p>
               <p className="mt-1 max-w-[420px] text-[13.5px] leading-relaxed text-ui-muted">
-                They appear here as soon as <span className="ui-figure">cre workflow simulate --broadcast</span> or the deployed workflow writes one to
-                the receiver.
+                {localRun ? (
+                  <>They appear here as soon as the workflow&rsquo;s local run writes one to the receiver.</>
+                ) : (
+                  <>
+                    They appear here as soon as <span className="ui-figure">cre workflow simulate --broadcast</span> or the deployed workflow writes one to
+                    the receiver.
+                  </>
+                )}
               </p>
             </div>
           }
