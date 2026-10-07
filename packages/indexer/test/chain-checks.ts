@@ -11,7 +11,7 @@ import type { TestIndexer } from "envio";
 
 import type { Activity } from "../client/src/types.js";
 import { toWebhookEvent } from "../client/src/webhooks.js";
-import { validateWebhookEvent } from "../client/test/sdk-event-shape.js";
+import { validateWebhookEvent } from "../client/src/sdk-event-shape.js";
 import { WEBHOOK_KINDS } from "../src/lib/util.js";
 
 export type Recorded = {
