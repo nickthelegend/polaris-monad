@@ -110,6 +110,14 @@ export const RELAYER_CALLS: readonly AllowedCall[] = [
     signedBy: "owner",
     minAmountArg: "amount",
   },
+  {
+    contract: "vault",
+    functionName: "withdrawWithSig",
+    rule: "Take out of Boost: CollateralVault.withdrawWithSig",
+    why: "Borrower's EIP-712 Withdraw: their own collateral back to them, never the caller, only while it secures no loan",
+    signedBy: "owner",
+    minAmountArg: "amount",
+  },
   { contract: "registry", functionName: "registerFor", rule: "Onboard: MerchantRegistry.registerFor", why: "Merchant's Registration signature (Privy embedded wallet)", signedBy: "owner" },
   { contract: "registry", functionName: "updatePayoutAddressWithSig", rule: "Payout address: updatePayoutAddressWithSig", why: "Merchant's PayoutUpdate signature", signedBy: "owner" },
   { contract: "stablecoin", functionName: "transferWithAuthorization", rule: "Payouts: AUSD transferWithAuthorization", why: "Owner's ERC-3009 TransferWithAuthorization (withdrawals, payouts, sends to a user)", signedBy: "owner", minAmountArg: "value" },
@@ -131,6 +139,10 @@ export const CONTRACT_ABIS: Record<RelayerContract, Abi> = {
  * deployment without one has no rule for it, so nothing may call it:
  * PolarisSplit (Monad testnet's deployment of 28 Sep 2026 predates it) and
  * the vault (one that predates `lockWithPermit` has no gasless collateral).
+ * A vault that predates `withdrawWithSig` (Monad testnet's today) still gets
+ * that rule: no call to it can succeed there (the function doesn't exist, so
+ * the simulation reverts before anything is signed), and the relay refuses
+ * it first anyway (relay.ts `withdrawCollateral`, server/vault.ts).
  */
 export type RelayerAddresses = Record<Exclude<RelayerContract, "split" | "vault">, Address> & { split?: Address | null; vault?: Address | null };
 

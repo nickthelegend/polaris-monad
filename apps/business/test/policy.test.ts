@@ -75,9 +75,35 @@ describe("the relayer's allow-list (checkRelayerCall)", () => {
     const noVault = { chainId: 10143, addresses: { ...rest, vault: null } };
     const lock = encodeFunctionData({ abi: collateralVaultAbi, functionName: "lockWithPermit", args: [someone, 1_000_000n, 2_000_000_000n, 27, zeroHash, zeroHash] });
     expect(() => checkRelayerCall({ to: vault as Address, data: lock, chainId: 10143 }, noVault)).toThrow(/isn't a Polaris contract/);
+    const take = encodeFunctionData({ abi: collateralVaultAbi, functionName: "withdrawWithSig", args: [someone, 1_000_000n, 2_000_000_000n, "0x"] });
+    expect(() => checkRelayerCall({ to: vault as Address, data: take, chainId: 10143 }, noVault)).toThrow(/isn't a Polaris contract/);
     const policy = buildRelayerPolicy(noVault);
     expect(policy.rules.some((r) => r.name.includes("CollateralVault"))).toBe(false);
-    expect(policy.rules).toHaveLength(RELAYER_CALLS.length);
+    // The two vault calls are left out; the DENY rule is added.
+    expect(policy.rules).toHaveLength(RELAYER_CALLS.length - 2 + 1);
+  });
+
+  it("carries a borrower's Withdraw to CollateralVault.withdrawWithSig (take out of Boost with no MON), above the minimum only", () => {
+    const take = (amount: bigint) => encodeFunctionData({ abi: collateralVaultAbi, functionName: "withdrawWithSig", args: [someone, amount, 2_000_000_000n, "0x1234"] });
+    const withMin = { ...expected, minAmountUnits: 100_000n };
+    expect(checkRelayerCall({ to: addresses.vault, data: take(25_000_000n), chainId: 10143 }, withMin)).toMatchObject({ contract: "vault", functionName: "withdrawWithSig" });
+    expect(() => checkRelayerCall({ to: addresses.vault, data: take(1n), chainId: 10143 }, withMin)).toThrow(/100000 base units or more/);
+    // withdraw() pays its caller, the relayer itself: never on the list, and neither is invalidateNonce.
+    const bare = encodeFunctionData({ abi: collateralVaultAbi, functionName: "withdraw", args: [1_000_000n] });
+    expect(() => checkRelayerCall({ to: addresses.vault, data: bare, chainId: 10143 }, expected)).toThrow(/allow-list/);
+    const burn = encodeFunctionData({ abi: collateralVaultAbi, functionName: "invalidateNonce" });
+    expect(() => checkRelayerCall({ to: addresses.vault, data: burn, chainId: 10143 }, expected)).toThrow(/allow-list/);
+    // Sent to another contract, it decodes as nothing there.
+    expect(() => checkRelayerCall({ to: addresses.loanEngine, data: take(25_000_000n), chainId: 10143 }, expected)).toThrow(PolicyViolation);
+
+    const policy = buildRelayerPolicy(withMin);
+    expect(lintPolicy(policy)).toEqual([]);
+    const rule = policy.rules.find((r) => r.name === "Take out of Boost: CollateralVault.withdrawWithSig");
+    expect(rule).toMatchObject({ method: "eth_signTransaction", action: "ALLOW" });
+    expect(rule?.conditions).toContainEqual(expect.objectContaining({ field: "to", operator: "in", value: [addresses.vault, (addresses.vault as string).toLowerCase()] }));
+    expect(rule?.conditions).toContainEqual(expect.objectContaining({ field: "function_name", operator: "eq", value: "withdrawWithSig" }));
+    expect(rule?.conditions).toContainEqual(expect.objectContaining({ field: "withdrawWithSig.amount", operator: "gte", value: "100000" }));
+    expect(RELAYER_CALLS.find((c) => c.functionName === "withdrawWithSig")).toMatchObject({ contract: "vault", signedBy: "owner" });
   });
 
   it("allows the three split-the-bill calls on PolarisSplit, and nothing else there", () => {
